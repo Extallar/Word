@@ -200,6 +200,9 @@
     window.scrollTo(0, 0);
   }
   window.addEventListener("hashchange", route);
+  // 고정 헤더 높이를 CSS 변수로 알려 준다(아래 도구 막대가 헤더 밑에 붙도록).
+  function setHdr() { var h = document.querySelector("header.top"); if (h) document.documentElement.style.setProperty("--hdr", h.offsetHeight + "px"); }
+  setHdr(); window.addEventListener("resize", setHdr);
 
   /* ---------- 홈 ---------- */
   views.home = function (el) {
@@ -247,8 +250,9 @@
       '<div><div class="eyebrow">단어장</div><h2>5개년 기출 단어 ' + D.all.length.toLocaleString() + "개</h2></div>" +
       '<p class="lead">2022~2026학년도 시험지 원문(지문·문제·보기)에 나온 단어를 표제어 단위로 묶었습니다. 같은 단어의 활용형(복수·시제·분사)만 묶고, important / importance처럼 다른 단어는 나눴습니다. \'뜻 보충\'은 엑셀에 뜻이 없어 새로 단 뜻입니다.</p>' +
       '<div class="row" id="wf"></div><p class="lead" id="wti" style="font-size:.85rem"></p><div class="row" id="wy"></div>' +
-      '<div class="row"><input type="search" id="wq" placeholder="영단어, 뜻, 동의어로 검색"><select id="ws"><option value="tier">등급순</option><option value="freq">출현 많은 순</option><option value="abc">알파벳순</option></select><button class="btn" id="wh">뜻 가리기</button></div>' +
-      '<div class="counter" id="wc"></div><div class="wlist" id="wl"></div>';
+      '<div class="wtools"><input type="search" id="wq" placeholder="영단어, 뜻, 동의어로 검색"><select id="ws" aria-label="정렬"><option value="tier">등급순</option><option value="freq">출현 많은 순</option><option value="abc">알파벳순</option></select>' +
+      '<button class="btn" id="wh" aria-pressed="false">뜻 가리기</button><span class="counter" id="wc"></span></div>' +
+      '<div class="wlist" id="wl"></div>';
     var chips = ["전체"].concat(TIERS).concat(["안 외운 단어"]);
     function drawChips() {
       $("#wf", el).innerHTML = chips.map(function (c) {
@@ -267,7 +271,11 @@
     };
     $("#wq", el).oninput = function () { q = this.value.trim().toLowerCase(); limit = 60; draw(); };
     $("#ws", el).onchange = function () { sort = this.value; draw(); };
-    $("#wh", el).onclick = function () { hide = !hide; this.textContent = hide ? "뜻 보이기" : "뜻 가리기"; $("#wl", el).classList.toggle("hide-m", hide); };
+    $("#wh", el).onclick = function () {
+      hide = !hide; this.textContent = hide ? "뜻 보이기" : "뜻 가리기";
+      this.setAttribute("aria-pressed", hide); this.classList.toggle("primary", hide);
+      $("#wl", el).classList.toggle("hide-m", hide);
+    };
     function list() {
       var r = D.all.filter(function (v) {
         if (wordTier === "안 외운 단어") { if (v.t === "고유명사" || v.t === "기본" || state.known[v.w.toLowerCase()]) return false; }

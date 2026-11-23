@@ -216,10 +216,24 @@ b.mk { color: var(--omr); font-family: var(--f-num); font-weight: 600; margin-ri
 .tipline { font-size: .88rem; color: var(--muted); }
 .tipline b { color: var(--ink); }
 .sechead { font-size: .95rem; color: var(--omr); border-top: 2px solid var(--omr); padding-top: 10px; margin-top: 8px; }
-.scorebar { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 92px); z-index: 3; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; }
+.scorebar { position: sticky; top: calc(env(safe-area-inset-top, 0px) + var(--hdr, 92px) + 6px); z-index: 3; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; }
 .scorebar .bar { flex-basis: 100%; margin-top: 2px; }
 .exbox { display: flex; flex-direction: column; gap: 6px; padding-top: 6px; color: var(--ink); }
 .exs { margin: 0; font-family: var(--f-word); line-height: 1.6; }
 .exs mark { background: var(--omr-soft); color: var(--ink); padding: 0 2px; border-radius: 3px; }
 .exbox p { margin: 0; }
-@media (max-width: 520px) { .qgrid { grid-template-columns: 1fr; } .scorebar { top: calc(env(safe-area-inset-top, 0px) + 84px); } }
+@media (max-width: 520px) { .qgrid { grid-template-columns: 1fr; } }
+
+/* 단어장 도구 막대: 스크롤해도 헤더 아래에 붙어 있음 */
+.wtools {
+  position: sticky; top: calc(env(safe-area-inset-top, 0px) + var(--hdr, 92px)); z-index: 4;
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  background: var(--bg); padding-block: 8px; margin-block: -8px;
+  border-bottom: 1px solid var(--line);
+}
+.wtools input[type="search"] { flex: 1 1 220px; }
+.wtools .counter { margin-left: auto; }
+@media (max-width: 520px) {
+  .wtools input[type="search"] { flex-basis: 100%; }
+  .wtools select { flex: 1 1 auto; }
+}
