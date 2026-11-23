@@ -237,3 +237,24 @@ b.mk { color: var(--omr); font-family: var(--f-num); font-weight: 600; margin-ri
   .wtools input[type="search"] { flex-basis: 100%; }
   .wtools select { flex: 1 1 auto; }
 }
+
+/* ---------- 오늘의 루틴 ---------- */
+.routine { display: flex; flex-direction: column; gap: 0; padding: 4px 18px; }
+.rstep { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.rstep:last-child { border-bottom: 0; }
+.rstep small { display: block; color: var(--muted); font-size: .84rem; }
+.rnum { width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid var(--omr); color: var(--omr); display: grid; place-items: center; font-family: var(--f-num); font-weight: 600; }
+.rstep.done .rnum { background: var(--good); border-color: var(--good); color: #fff; }
+.rstep.done b { color: var(--muted); }
+.fc { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; align-items: end; margin-top: 10px; }
+.fcd { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.fcb { width: 70%; max-width: 34px; min-height: 2px; background: var(--omr); border-radius: 3px 3px 0 0; opacity: .75; }
+.fcd small { color: var(--muted); }
+.cfg { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.chk { display: inline-flex; gap: 6px; align-items: center; }
+.tflash { min-height: 300px; }
+.tex { font-size: .9rem; text-align: left; max-width: 46ch; }
+.todaycta { display: flex; justify-content: space-between; align-items: center; gap: 12px; text-decoration: none; color: var(--ink); border-color: var(--omr); }
+.todaycta small { display: block; color: var(--muted); }
+.btn small { opacity: .6; font-family: var(--f-num); margin-left: 2px; }
+#ts { scroll-margin-top: calc(var(--hdr, 92px) + 8px); }

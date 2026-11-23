@@ -216,6 +216,7 @@
     el.innerHTML =
       '<div><div class="eyebrow">한국공학대학교 편입영어 · 2022–2026 기출</div><h2>기출 단어로 공부하기</h2></div>' +
       '<p class="lead">5개년 시험지 200문항의 원문에서 뽑은 단어 ' + D.all.length.toLocaleString() + '개를 5개년 기준 등급으로 나눴습니다. 직접 출제 어휘와 반복 학술 어휘부터 외우고, 실전 기출로 원문 그대로 풀어 보세요.</p>' +
+      '<a class="panel todaycta" href="#today"><div><b>오늘의 루틴</b><small>복습 ' + dueList().length + '개 · 새 단어 ' + newLeft() + '개 남음 · 연속 ' + streak() + '일</small></div><span class="btn primary">시작 →</span></a>' +
       '<div class="stats">' +
         '<div class="stat"><small>외운 단어 (기본어 제외)</small><b>' + known + '<small> / ' + total + '</small></b><div class="bar"><i style="width:' + pct + '%"></i></div></div>' +
         '<div class="stat"><small>실전 기출</small><b>' + ok + '<small> / ' + done + ' 정답</small></b><small>5개년 200문항 중 ' + done + "문항 풀이</small></div>" +
@@ -297,8 +298,6 @@
         '<details class="meta exd" data-w="' + esc(k) + '"><summary>기출 예문 · 문항 번호</summary><div class="exbox"></div></details></div>' +
         '<div class="side"><span class="tag' + (v.t === "직접 출제" ? "" : " plain") + '">' + esc(v.t) + "</span>" + (v.tg ? ' <span class="tag plain">' + esc(v.tg) + "</span>" : "") + ' <span class="meta num">' + v.y + "개년 " + v.n + "회</span></div></div>";
     }
-    var BYW = {};
-    D.all.forEach(function (a) { BYW[a.w.toLowerCase()] = a; });
     function draw() {
       var l = list();
       $("#wc", el).textContent = l.length.toLocaleString() + "개";
@@ -565,6 +564,198 @@
       '<h3>독해 문항별 접근법</h3><div class="grid">' + D.reading.map(function (r) {
         return '<div class="panel" style="display:flex;flex-direction:column;gap:6px"><b>' + esc(r.t) + '</b><span class="tag plain" style="align-self:flex-start">' + esc(r.ex) + '</span><p class="tip-how">' + esc(r.how) + "</p></div>";
       }).join("") + "</div>";
+  };
+
+  /* ---------- 오늘 (간격 반복 복습 + 루틴) ---------- */
+  // 상자 0~5. 맞힐수록 다음 복습까지 간격이 길어진다(일 단위).
+  var GAPS = [1, 1, 3, 7, 14, 30];
+  var ROUTINE_TIERS = ["직접 출제", "반복 학술", "심화", "일반"];
+  state.srs = state.srs || {};
+  state.days = state.days || {};
+  state.cfg = Object.assign({ daily: 30, tiers: ["직접 출제", "반복 학술", "심화"] }, state.cfg || {});
+  function dayNo(d) { d = d || new Date(); return Math.floor((d.getTime() - d.getTimezoneOffset() * 60000) / 86400000); }
+  function dayLog(t) { t = t == null ? dayNo() : t; return state.days[t] || (state.days[t] = { rev: 0, nw: 0, quiz: 0, ok: 0, words: [] }); }
+  function logWord(k) { var L = dayLog(); if (L.words.indexOf(k) < 0) L.words.push(k); }
+  function streak() {
+    var t = dayNo(), n = 0;
+    function active(d) { var L = state.days[d]; return L && (L.rev + L.nw + L.quiz) > 0; }
+    if (!active(t)) t--;
+    while (active(t)) { n++; t--; }
+    return n;
+  }
+  function dueList() {
+    var t = dayNo();
+    return Object.keys(state.srs).filter(function (k) { return state.srs[k].due <= t && BYW[k]; })
+      .sort(function (a, b) { return state.srs[a].due - state.srs[b].due || state.srs[a].b - state.srs[b].b; });
+  }
+  function newList(n) {
+    var out = [];
+    for (var i = 0; i < D.all.length && out.length < n; i++) {
+      var a = D.all[i], k = a.w.toLowerCase();
+      if (state.cfg.tiers.indexOf(a.t) < 0 || state.srs[k] || state.known[k]) continue;
+      out.push(k);
+    }
+    return out;
+  }
+  function newLeft() { return Math.max(0, state.cfg.daily - dayLog().nw); }
+  // 답 처리: again 0 / hard 1 / good 2
+  function grade(k, g, isNew) {
+    var t = dayNo(), first = !state.srs[k], s = state.srs[k] || { b: 0, due: t };
+    if (g === 0) { s.b = 0; s.due = t + 1; delete state.known[k]; markWrong(k); }
+    else if (g === 1) { s.b = Math.max(1, s.b); s.due = t + Math.max(1, Math.ceil(GAPS[s.b] / 2)); }
+    else { s.b = Math.min(5, s.b + 1); s.due = t + GAPS[s.b]; if (s.b >= 3) state.known[k] = 1; if (state.wrong[k] && s.b >= 2) delete state.wrong[k]; }
+    s.last = t;
+    state.srs[k] = s;
+    var L = dayLog(); if (isNew) { if (first) L.nw++; } else L.rev++;
+    logWord(k);
+    save();
+  }
+  // 퀴즈·기출에서 틀린 단어는 내일 복습으로 넣는다
+  var _markWrong = markWrong;
+  markWrong = function (k) {
+    _markWrong(k);
+    if (BYW[k]) { var s = state.srs[k] || { b: 0 }; s.b = 0; s.due = dayNo() + 1; state.srs[k] = s; save(); }
+  };
+  var BYW = {};
+  D.all.forEach(function (a) { BYW[a.w.toLowerCase()] = a; });
+
+  views.today = function (el) {
+    var session = null;
+    function render() {
+      var due = dueList(), L = dayLog(), left = newLeft(), st = streak();
+      var reviewDone = due.length === 0, newDone = left === 0 || newList(1).length === 0;
+      var todayWords = L.words.length, quizDone = L.quiz >= Math.min(10, todayWords) && todayWords > 0;
+      var t = dayNo(), forecast = [];
+      for (var i = 1; i <= 7; i++) forecast.push(Object.keys(state.srs).filter(function (k) { return state.srs[k].due === t + i; }).length);
+      var fmax = Math.max.apply(null, forecast.concat([1]));
+      var dow = new Date().getDay(), weekend = dow === 0 || dow === 6;
+      var inSrs = Object.keys(state.srs).length, mastered = Object.keys(state.srs).filter(function (k) { return state.srs[k].b >= 4; }).length;
+      el.innerHTML =
+        '<div><div class="eyebrow">' + new Date().toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "long" }) + '</div><h2>오늘의 루틴</h2></div>' +
+        '<div class="stats">' +
+          '<div class="stat"><small>연속 학습</small><b>' + st + '<small>일</small></b><small>' + (L.rev + L.nw + L.quiz ? "오늘 공부함" : "오늘 아직 시작 전") + "</small></div>" +
+          '<div class="stat"><small>복습 대기</small><b>' + due.length + '</b><small>오늘 복습 ' + L.rev + "개 완료</small></div>" +
+          '<div class="stat"><small>새 단어</small><b>' + L.nw + "<small> / " + state.cfg.daily + '</small></b><div class="bar"><i style="width:' + Math.min(100, L.nw / state.cfg.daily * 100) + '%"></i></div></div>' +
+          '<div class="stat"><small>복습 중인 단어</small><b>' + inSrs + '</b><small>그중 장기 기억 ' + mastered + "개</small></div>" +
+        "</div>" +
+        '<div class="panel routine">' +
+          step(1, "복습 카드", reviewDone ? (L.rev ? "완료 · " + L.rev + "개 복습" : "오늘 복습할 단어 없음") : due.length + "개 남음 · 1·3·7·14·30일 간격으로 다시 나오는 단어", reviewDone, reviewDone ? "" : '<button class="btn primary" data-go="review">시작</button>') +
+          step(2, "새 단어", newDone ? "완료 · " + L.nw + "개" : left + "개 남음 · " + state.cfg.tiers.join(" → ") + " 순서", newDone, newDone ? (newList(1).length ? '<button class="btn" data-go="more">10개 더</button>' : "") : '<button class="btn primary" data-go="new">시작</button>') +
+          step(3, "오늘 단어 퀴즈", todayWords ? (quizDone ? "완료 · " + L.ok + "/" + L.quiz + " 정답" : "오늘 본 단어 " + todayWords + "개로 4지선다") : "복습이나 새 단어를 먼저 해 주세요", quizDone, todayWords ? '<button class="btn' + (quizDone ? "" : " primary") + '" data-go="quiz">' + (quizDone ? "한 번 더" : "시작") + "</button>" : "") +
+          step(4, weekend ? "주말 실전 기출" : "실전 기출 (주말 추천)", "한 해 40문항을 풀고, 지문에서 막힌 단어는 단어장 별표를 꺼서 복습 대상으로", false, '<a class="btn" href="#real">열기</a>') +
+        "</div>" +
+        '<div id="ts"></div>' +
+        '<div class="panel"><h3>다가오는 복습 (7일)</h3><div class="fc">' + forecast.map(function (n, i) {
+          var d = new Date(Date.now() + (i + 1) * 86400000);
+          return '<div class="fcd"><span class="fcb" style="height:' + Math.round(n / fmax * 60) + 'px"></span><b class="num">' + n + "</b><small>" + ["일", "월", "화", "수", "목", "금", "토"][d.getDay()] + "</small></div>";
+        }).join("") + "</div></div>" +
+        '<details class="panel"><summary><b>루틴 설정</b></summary><div class="cfg">' +
+          '<label>하루 새 단어 <select id="tdaily">' + [10, 20, 30, 40, 50].map(function (n) { return '<option' + (n === state.cfg.daily ? " selected" : "") + ">" + n + "</option>"; }).join("") + "</select>개</label>" +
+          '<div class="row">' + ROUTINE_TIERS.map(function (t) { return '<label class="chk"><input type="checkbox" data-tier="' + t + '"' + (state.cfg.tiers.indexOf(t) >= 0 ? " checked" : "") + "> " + t + "</label>"; }).join("") + "</div>" +
+          '<p class="lead" style="font-size:.82rem">새 단어는 체크한 등급에서 단어장 순서(여러 해 나온 단어 먼저)대로 나옵니다. 별표로 외운 단어는 건너뜁니다.</p>' +
+          '<div class="row"><button class="btn" id="treset">복습 기록 초기화</button><span id="tconfirm" hidden><button class="btn bad" id="tyes">정말 지우기</button> <button class="btn" id="tno">취소</button></span></div>' +
+        "</div></details>";
+      if (session) drawSession();
+    }
+    function step(n, title, desc, done, action) {
+      return '<div class="rstep' + (done ? " done" : "") + '"><span class="rnum">' + (done ? "✓" : n) + '</span><div style="min-width:0"><b>' + title + "</b><small>" + desc + "</small></div><div>" + action + "</div></div>";
+    }
+    function start(kind) {
+      if (kind === "review") session = { kind: kind, q: dueList(), i: 0, flip: false };
+      else if (kind === "new" || kind === "more") { session = { kind: "new", q: newList(kind === "more" ? 10 : newLeft()), i: 0, flip: false }; }
+      else if (kind === "quiz") session = { kind: kind, q: shuffle(dayLog().words.filter(function (k) { return BYW[k]; })).slice(0, 20), i: 0, picked: null };
+      render();
+      var ts = $("#ts", el); if (ts) ts.scrollIntoView({ block: "start" });
+    }
+    function drawSession() {
+      var ts = $("#ts", el), s = session;
+      if (s.i >= s.q.length) {
+        ts.innerHTML = '<div class="panel empty"><h3>' + (s.kind === "review" ? "복습 끝!" : s.kind === "new" ? "새 단어 끝!" : "퀴즈 끝!") + "</h3><p>" + s.q.length + "개를 마쳤습니다.</p><button class=\"btn primary\" data-go=\"close\">루틴으로</button></div>";
+        return;
+      }
+      var a = BYW[s.q[s.i]];
+      if (s.kind === "quiz") return drawQuiz(ts, a);
+      var ex = s.flip ? examples(a, 1)[0] : null;
+      ts.innerHTML = '<div class="card-stage"><div class="counter">' + (s.kind === "review" ? "복습 " : "새 단어 ") + (s.i + 1) + " / " + s.q.length + "</div>" +
+        '<div class="flash tflash" id="tfc" tabindex="0" role="button" aria-label="카드 뒤집기">' +
+          '<div class="row" style="justify-content:center"><span class="fw">' + esc(a.w) + "</span>" + spk(a.w) + "</div>" +
+          (s.flip ? '<div class="fm">' + esc(a.m) + "</div>" + (a.s ? '<div class="syn"><b>동의어</b> ' + esc(a.s) + "</div>" : "") +
+            (ex ? '<p class="exs tex"><span class="tag plain num">' + ex.y + " · " + ex.q + "번</span> " + ex.h + "</p>" : "") +
+            '<div class="fx">' + esc(a.t) + (a.tg ? " · " + esc(a.tg) : "") + " · " + a.y + "개년 " + a.n + "회</div>"
+            : '<div class="hint">뜻을 떠올린 뒤 눌러서 확인 (Space)</div>') +
+        "</div>" +
+        (s.flip ? '<div class="row" style="justify-content:center"><button class="btn bad" data-g="0">몰라요 <small>1</small></button><button class="btn" data-g="1">헷갈려요 <small>2</small></button><button class="btn good" data-g="2">알아요 <small>3</small></button></div>' +
+          '<p class="lead" style="font-size:.78rem;text-align:center">몰라요: 내일 다시 · 헷갈려요: 조금 뒤 다시 · 알아요: 간격을 늘려 다시</p>'
+          : '<div class="row" style="justify-content:center"><button class="btn primary" data-flip="1">뜻 확인</button></div>') +
+        '<div class="row" style="justify-content:center"><button class="btn" data-go="close">그만하기</button></div></div>';
+      if (s.flip && canSpeak) say(a.w);
+    }
+    function drawQuiz(ts, a) {
+      var s = session;
+      if (!s.choices) s.choices = shuffle([a].concat(shuffle(D.all.filter(function (x) { return x.w !== a.w && x.m !== a.m && x.t !== "고유명사"; })).slice(0, 3)));
+      ts.innerHTML = '<div class="panel"><div class="row" style="justify-content:space-between"><span class="score">퀴즈 ' + (s.i + 1) + " / " + s.q.length + "</span></div>" +
+        '<div class="row q-target" style="margin:14px 0">' + esc(a.w) + spk(a.w) + "</div>" +
+        '<div class="opts">' + s.choices.map(function (c, i) {
+          var cls = s.picked == null ? "" : c === a ? " correct" : s.picked === i ? " wrong" : "";
+          return '<button class="opt' + cls + '" data-pick="' + i + '"' + (s.picked != null ? " disabled" : "") + '><span class="bubble">' + (i + 1) + "</span><span>" + esc(c.m) + (s.picked != null ? '<br><span class="om">' + esc(c.w) + "</span>" : "") + "</span></button>";
+        }).join("") + "</div>" +
+        (s.picked != null ? '<div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn primary" data-next="1">다음 →</button></div>' : "") +
+        '<div class="row" style="margin-top:8px"><button class="btn" data-go="close">그만하기</button></div></div>';
+    }
+    el.addEventListener("click", function (e) {
+      var g = e.target.closest("[data-go]");
+      if (g) {
+        var k = g.dataset.go;
+        if (k === "close") { session = null; render(); window.scrollTo(0, 0); } else start(k);
+        return;
+      }
+      if (!session) return;
+      if (e.target.closest("[data-flip]") || e.target.closest("#tfc")) { session.flip = !session.flip; drawSession(); return; }
+      var gr = e.target.closest("[data-g]");
+      if (gr) { answer(+gr.dataset.g); return; }
+      var pk = e.target.closest("[data-pick]");
+      if (pk && session.picked == null) {
+        var s = session, i = +pk.dataset.pick, a = BYW[s.q[s.i]], ok = s.choices[i] === a;
+        s.picked = i; var L = dayLog(); L.quiz++; if (ok) L.ok++; else grade(a.w.toLowerCase(), 0, false), L.rev--;
+        state.quiz.total++; if (ok) state.quiz.right++;
+        save(); drawSession(); return;
+      }
+      if (e.target.closest("[data-next]")) { session.i++; session.picked = null; session.choices = null; drawSession(); }
+    });
+    function answer(g) {
+      var s = session, k = s.q[s.i];
+      grade(k, g, s.kind === "new");
+      if (g === 0) s.q.push(k); // 몰라요는 이번 세션 끝에 한 번 더
+      s.i++; s.flip = false;
+      render();
+    }
+    el._key = function (e) {
+      if (!session || e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
+      if (session.kind === "quiz") {
+        var n = parseInt(e.key, 10);
+        if (n >= 1 && n <= 4 && session.picked == null) { var b = el.querySelector('[data-pick="' + (n - 1) + '"]'); if (b) b.click(); }
+        else if (e.key === "Enter" && session.picked != null) { var nx = el.querySelector("[data-next]"); if (nx) nx.click(); }
+        return;
+      }
+      if (e.key === " ") { e.preventDefault(); session.flip = !session.flip; drawSession(); }
+      else if (session.flip && (e.key === "1" || e.key === "2" || e.key === "3")) answer(+e.key - 1);
+    };
+    el.addEventListener("change", function (e) {
+      if (e.target.id === "tdaily") { state.cfg.daily = +e.target.value; save(); render(); }
+      if (e.target.dataset && e.target.dataset.tier) {
+        var t = e.target.dataset.tier, arr = state.cfg.tiers.filter(function (x) { return x !== t; });
+        if (e.target.checked) arr.push(t);
+        state.cfg.tiers = ROUTINE_TIERS.filter(function (x) { return arr.indexOf(x) >= 0; });
+        if (!state.cfg.tiers.length) state.cfg.tiers = ["직접 출제"];
+        save(); render();
+      }
+    });
+    el.addEventListener("click", function (e) {
+      if (e.target.id === "treset") $("#tconfirm", el).hidden = false;
+      if (e.target.id === "tno") $("#tconfirm", el).hidden = true;
+      if (e.target.id === "tyes") { state.srs = {}; state.days = {}; save(); session = null; render(); }
+    });
+    render();
   };
 
   /* ---------- 오답노트 ---------- */
