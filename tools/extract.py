@@ -51,7 +51,50 @@ for r in rows('17-25번_문맥정답', 4):
 grammar = [dict(t=s(r[0]), ex=s(r[1]), how=s(r[2]), eg=s(r[3])) for r in rows('문법_풀이법', 4)]
 reading = [dict(t=s(r[0]), ex=s(r[1]), how=s(r[2])) for r in rows('독해_풀이법', 4)]
 
-data = dict(vocab=vocab, repeat=repeat, core=core, ctx=ctx, grammar=grammar, reading=reading)
+# ---- 전체 단어 (5개년 어간 전체 + 3개년 표기형 중 누락분) ----
+import re, glob, os
+known = {}
+for v in vocab: known.setdefault(v['w'].lower(), v['m'])
+for v in repeat: known.setdefault(v['w'].lower(), v['m'])
+for c in core:
+    known.setdefault(c['tw'].lower(), c['m'])
+    for o in c['o']: known.setdefault(o['w'].lower(), o['m'])
+freq = rows('전체표기형_빈도', 4)
+for r in freq:
+    if len(r) > 9 and r[9]: known.setdefault(s(r[0]).lower(), s(r[9]))
+extra = {}
+mdir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'meanings')
+for fn in sorted(glob.glob(os.path.join(mdir, '*.tsv'))):
+    for line in open(fn, encoding='utf-8'):
+        if '\t' in line:
+            k, v = line.rstrip('\n').split('\t', 1)
+            extra[k.lower()] = v
+
+def meaning(cands):
+    for k in cands:
+        if k in known: return known[k], 0
+    for k in cands:
+        if k in extra: return extra[k], 1
+    return '', 1
+
+allw, seen_forms = [], set()
+for r in rows('5개년_어간전체', 4):
+    forms = [f.strip() for f in re.findall(r"([^,()]+)\(\d+\)", s(r[10]))]
+    fl = [f.lower() for f in forms]
+    seen_forms.update(fl)
+    m, x = meaning([s(r[0]).lower()] + fl)
+    allw.append(dict(w=s(r[0]), m=m, x=x, n=r[2] or 0, y=r[3] or 0, c=[r[4] or 0, r[5] or 0, r[6] or 0, r[7] or 0, r[8] or 0],
+                     q=s(r[9]), f=', '.join(forms)))
+for r in freq:
+    w = s(r[0])
+    if w.lower() in seen_forms: continue
+    m, x = meaning([w.lower()])
+    qs = ', '.join(f'{y}:{s(r[6 + i])}' for i, y in enumerate((2024, 2025, 2026)) if r[6 + i])
+    allw.append(dict(w=w, m=m, x=x, n=r[1] or 0, y=r[2] or 0, c=[None, None, r[3] or 0, r[4] or 0, r[5] or 0], q=qs, f=w))
+allw.sort(key=lambda d: (-d['n'], d['w']))
+print('전체 단어', len(allw), '뜻 없음', sum(1 for d in allw if not d['m']), '보충 뜻', sum(d['x'] for d in allw))
+
+data = dict(all=allw, vocab=vocab, repeat=repeat, core=core, ctx=ctx, grammar=grammar, reading=reading)
 with open(out, 'w', encoding='utf-8') as f:
     f.write('// 자동 생성 파일: tools/extract.py\nwindow.WORD_DATA = ')
     json.dump(data, f, ensure_ascii=False, separators=(',', ':'))

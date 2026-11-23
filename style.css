@@ -179,3 +179,5 @@ th { color: var(--muted); font-weight: 500; font-size: .8rem; white-space: nowra
   .flash { transition: transform .15s ease; }
   .flash:active { transform: scale(.99); }
 }
+details.meta summary { cursor: pointer; width: fit-content; }
+details.meta { overflow-wrap: anywhere; }

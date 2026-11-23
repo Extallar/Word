@@ -24,10 +24,16 @@
   function add(pool, w, m, src) {
     if (!w || !m) return;
     var k = w.toLowerCase();
-    if (pool.some(function (x) { return x.k === k; })) return;
+    pool._idx = pool._idx || {};
+    if (pool._idx[k]) return;
+    pool._idx[k] = 1;
     pool.push({ k: k, w: w, m: m, src: src });
   }
-  pools.p1 = []; pools.p2 = []; pools.p3 = []; pools.core = []; pools.opts = []; pools.all = [];
+  function isProper(m) { return /^\((인명|지명|고유명사|인명\/지명|지명\/인명)\)/.test(m); }
+  function yearsText(a) {
+    return [2022, 2023, 2024, 2025, 2026].map(function (y, i) { return a.c[i] ? y + "년 " + a.c[i] + "회" : ""; }).filter(Boolean).join(" · ");
+  }
+  pools.p1 = []; pools.p2 = []; pools.p3 = []; pools.core = []; pools.opts = []; pools.all = []; pools.every = []; pools.multi = [];
   D.vocab.forEach(function (v) {
     var key = v.p.indexOf("1순위") === 0 ? "p1" : v.p.indexOf("2순위") === 0 ? "p2" : "p3";
     add(pools[key], v.w, v.m, v.p);
@@ -36,10 +42,16 @@
     add(pools.core, c.tw, c.m, c.yr + "년 " + c.q + "번 " + (c.t === "동의어" ? "표적어" : "정답"));
     c.o.forEach(function (o) { add(pools.opts, o.w, o.m, c.yr + "년 " + c.q + "번 보기"); });
   });
-  ["p1", "p2", "p3", "core", "opts"].forEach(function (k) { pools[k].forEach(function (x) { add(pools.all, x.w, x.m, x.src); }); });
+  D.all.forEach(function (a) {
+    if (isProper(a.m)) return;
+    var src = "기출 " + a.n + "회 · " + a.y + "개년";
+    add(pools.every, a.w, a.m, src);
+    if (a.y >= 3) add(pools.multi, a.w, a.m, src);
+  });
+  ["p1", "p2", "p3", "core", "opts", "every"].forEach(function (k) { pools[k].forEach(function (x) { add(pools.all, x.w, x.m, x.src); }); });
   var POOL_NAMES = {
     p1: "1순위 (직접출제·3개년 반복)", p2: "2순위 (2개년 반복)", p3: "3순위 (심화)",
-    core: "5개년 1~8번 핵심 40", opts: "1~8번 보기 단어", all: "전체", wrong: "오답노트", unknown: "아직 모르는 단어"
+    core: "5개년 1~8번 핵심 40", opts: "1~8번 보기 단어", multi: "3개년 이상 반복 단어", every: "파일 전체 단어(고유명사 제외)", wrong: "오답노트", unknown: "아직 모르는 단어"
   };
   function getPool(key) {
     if (key === "wrong") return pools.all.filter(function (x) { return state.wrong[x.k]; });
@@ -87,7 +99,7 @@
         '<div class="stat"><small>퀴즈 누적</small><b>' + state.quiz.right + '<small> / ' + state.quiz.total + '</small></b><small>정답 / 문제</small></div>' +
       "</div>" +
       '<div class="panel"><h3>추천 학습 순서</h3><ol class="steps" style="margin-top:10px">' +
-        '<li><a href="#words">단어장</a>에서 1순위(직접 출제·3개년 반복) 70개부터 뜻 가리고 외우기</li>' +
+        '<li><a href="#words">단어장</a>의 우선 암기 1순위(직접 출제·3개년 반복) 70개부터 뜻 가리고 외우기. 이후 파일 전체 단어 ' + D.all.length.toLocaleString() + '개를 여러 해 나온 순서로 확장</li>' +
         '<li><a href="#cards">카드</a>로 넘기며 아는 단어 체크 → 모르는 단어만 반복</li>' +
         '<li><a href="#exam">기출 1~8번</a>을 실제 보기로 풀고, 오답 보기의 뜻까지 확인</li>' +
         '<li><a href="#quiz">퀴즈</a>로 점검, 틀린 단어는 <a href="#review">오답노트</a>에 자동 저장</li>' +
@@ -104,43 +116,99 @@
   };
 
   /* ---------- 단어장 ---------- */
+  var wordMode = "all";
   views.words = function (el) {
-    var filter = "all", q = "", hide = false, limit = 60;
+    var filter = "all", q = "", hide = false, limit = 60, year = 0;
     el.innerHTML =
-      '<div><div class="eyebrow">우선 암기 단어장</div><h2>3개년 기출 어휘 217개</h2></div>' +
-      '<p class="lead">우선순위는 직접 출제 > 3개년 반복 > 2개년 반복 순입니다. 별표를 누르면 외운 단어로 표시됩니다.</p>' +
-      '<div class="row" id="wf"></div>' +
+      '<div><div class="eyebrow">단어장</div><h2 id="wt"></h2></div>' +
+      '<div class="row" id="wmode">' +
+        '<button class="chip" data-m="all">파일 전체 단어 ' + D.all.length.toLocaleString() + "개</button>" +
+        '<button class="chip" data-m="prio">우선 암기 ' + D.vocab.length + "개</button></div>" +
+      '<p class="lead" id="wd"></p>' +
+      '<div class="row" id="wf"></div><div class="row" id="wy"></div>' +
       '<div class="row"><input type="search" id="wq" placeholder="영단어나 뜻으로 검색"><button class="btn" id="wh">뜻 가리기</button></div>' +
       '<div class="counter" id="wc"></div><div class="wlist" id="wl"></div>';
-    var cats = [["all", "전체"], ["1순위 · 직접 출제", "직접 출제"], ["1순위 · 3개년 반복", "3개년 반복"], ["2순위 · 2개년 반복", "2개년 반복"], ["2순위 · 같은 연도 고빈도", "같은 연도 고빈도"], ["3순위 · 심화 어휘", "심화"], ["unknown", "안 외운 단어"]];
-    $("#wf", el).innerHTML = cats.map(function (c) { return '<button class="chip' + (c[0] === filter ? " on" : "") + '" data-f="' + esc(c[0]) + '">' + c[1] + "</button>"; }).join("");
+
+    var CATS = {
+      prio: [["all", "전체"], ["1순위 · 직접 출제", "직접 출제"], ["1순위 · 3개년 반복", "3개년 반복"], ["2순위 · 2개년 반복", "2개년 반복"], ["2순위 · 같은 연도 고빈도", "같은 연도 고빈도"], ["3순위 · 심화 어휘", "심화"], ["unknown", "안 외운 단어"]],
+      all: [["all", "전체"], ["5", "5개년 모두"], ["4", "4개년"], ["3", "3개년"], ["2", "2개년"], ["1", "1개년만"], ["noproper", "고유명사 제외"], ["unknown", "안 외운 단어"]]
+    };
+    function setMode(m) {
+      wordMode = m; filter = "all"; year = 0; limit = 60;
+      el.querySelectorAll("#wmode .chip").forEach(function (c) { c.classList.toggle("on", c.dataset.m === m); });
+      $("#wt", el).textContent = m === "all" ? "기출 전체 단어 " + D.all.length.toLocaleString() + "개" : "3개년 우선 암기 어휘 " + D.vocab.length + "개";
+      $("#wd", el).textContent = m === "all"
+        ? "2022~2026학년도 문제·지문·보기에 나온 모든 단어를 출현 횟수 순으로 정리했습니다. 같은 어간의 활용형은 한 단어로 묶었습니다. '뜻 보충' 표시는 엑셀에 뜻이 없어 새로 단 뜻입니다."
+        : "우선순위는 직접 출제 > 3개년 반복 > 2개년 반복 순입니다. 별표를 누르면 외운 단어로 표시됩니다.";
+      $("#wf", el).innerHTML = CATS[m].map(function (c) { return '<button class="chip' + (c[0] === filter ? " on" : "") + '" data-f="' + esc(c[0]) + '">' + c[1] + "</button>"; }).join("");
+      $("#wy", el).innerHTML = m === "all" ? [0, 2022, 2023, 2024, 2025, 2026].map(function (y) {
+        return '<button class="chip' + (y === year ? " on" : "") + '" data-y="' + y + '">' + (y ? y + "학년도" : "모든 연도") + "</button>";
+      }).join("") : "";
+      $("#wy", el).hidden = m !== "all";
+      draw();
+    }
+    $("#wmode", el).onclick = function (e) { var b = e.target.closest("[data-m]"); if (b && b.dataset.m !== wordMode) setMode(b.dataset.m); };
     $("#wf", el).onclick = function (e) {
       var b = e.target.closest("[data-f]"); if (!b) return;
       filter = b.dataset.f; limit = 60;
       el.querySelectorAll("#wf .chip").forEach(function (c) { c.classList.toggle("on", c === b); });
       draw();
     };
+    $("#wy", el).onclick = function (e) {
+      var b = e.target.closest("[data-y]"); if (!b) return;
+      year = +b.dataset.y; limit = 60;
+      el.querySelectorAll("#wy .chip").forEach(function (c) { c.classList.toggle("on", c === b); });
+      draw();
+    };
     $("#wq", el).oninput = function () { q = this.value.trim().toLowerCase(); limit = 60; draw(); };
     $("#wh", el).onclick = function () { hide = !hide; this.textContent = hide ? "뜻 보이기" : "뜻 가리기"; $("#wl", el).classList.toggle("hide-m", hide); };
-    function draw() {
-      var list = D.vocab.filter(function (v) {
+
+    function match(v) {
+      return !q || v.w.toLowerCase().indexOf(q) >= 0 || v.m.indexOf(q) >= 0 || (v.f && v.f.toLowerCase().indexOf(q) >= 0);
+    }
+    function listPrio() {
+      return D.vocab.filter(function (v) {
         if (filter === "unknown") { if (state.known[v.w.toLowerCase()]) return false; }
         else if (filter !== "all" && v.p !== filter) return false;
-        return !q || v.w.toLowerCase().indexOf(q) >= 0 || v.m.indexOf(q) >= 0;
+        return match(v);
       });
-      $("#wc", el).textContent = list.length + "개";
-      var html = list.slice(0, limit).map(function (v) {
-        var k = v.w.toLowerCase();
-        var yrs = YEARS3.map(function (y, i) { return v.c[i] ? y + "(" + v.q[i] + "번)" : ""; }).filter(Boolean).join(" · ");
-        return '<div class="witem"><button class="star' + (state.known[k] ? " on" : "") + '" data-k="' + esc(k) + '" aria-label="외운 단어 표시">★</button>' +
-          '<div style="min-width:0"><div class="row" style="gap:8px"><span class="w">' + esc(v.w) + "</span>" +
-          (canSpeak ? '<button class="say" data-say="' + esc(v.w) + '">발음</button>' : "") + "</div>" +
-          '<div class="m">' + esc(v.m) + '</div><div class="meta">' + esc(yrs) + (v.f && v.f !== v.w ? " · 어형: " + esc(v.f) : "") + "</div></div>" +
-          '<div class="side"><span class="tag' + (v.p.indexOf("3순위") === 0 ? " plain" : "") + '">' + esc(v.p.split(" · ")[1] || v.p) + '</span> <span class="meta num">' + v.n + "회</span></div></div>";
-      }).join("");
+    }
+    function listAll() {
+      return D.all.filter(function (v) {
+        if (filter === "unknown") { if (state.known[v.w.toLowerCase()]) return false; }
+        else if (filter === "noproper") { if (isProper(v.m)) return false; }
+        else if (filter !== "all" && v.y !== +filter) return false;
+        if (year && !v.c[year - 2022]) return false;
+        return match(v);
+      });
+    }
+    function itemPrio(v) {
+      var k = v.w.toLowerCase();
+      var yrs = YEARS3.map(function (y, i) { return v.c[i] ? y + "(" + v.q[i] + "번)" : ""; }).filter(Boolean).join(" · ");
+      return row(k, v.w, v.m, esc(yrs) + (v.f && v.f !== v.w ? " · 어형: " + esc(v.f) : ""),
+        '<span class="tag' + (v.p.indexOf("3순위") === 0 ? " plain" : "") + '">' + esc(v.p.split(" · ")[1] || v.p) + '</span> <span class="meta num">' + v.n + "회</span>");
+    }
+    function itemAll(v) {
+      var k = v.w.toLowerCase();
+      var forms = v.f && v.f.toLowerCase() !== k ? " · 어형: " + esc(v.f) : "";
+      return row(k, v.w, v.m, esc(yearsText(v)) + forms + (v.x ? ' · <span style="color:var(--omr)">뜻 보충</span>' : ""),
+        '<span class="tag plain">' + v.y + '개년</span> <span class="meta num">' + v.n + "회</span>", v.q);
+    }
+    function row(k, w, m, meta, side, qnums) {
+      return '<div class="witem"><button class="star' + (state.known[k] ? " on" : "") + '" data-k="' + esc(k) + '" aria-label="외운 단어 표시">★</button>' +
+        '<div style="min-width:0"><div class="row" style="gap:8px"><span class="w">' + esc(w) + "</span>" +
+        (canSpeak ? '<button class="say" data-say="' + esc(w) + '">발음</button>' : "") + "</div>" +
+        '<div class="m">' + esc(m) + '</div><div class="meta">' + meta + "</div>" +
+        (qnums ? '<details class="meta"><summary>출제 문항 번호</summary>' + esc(qnums) + "</details>" : "") + "</div>" +
+        '<div class="side">' + side + "</div></div>";
+    }
+    function draw() {
+      var list = wordMode === "all" ? listAll() : listPrio();
+      $("#wc", el).textContent = list.length.toLocaleString() + "개";
+      var html = list.slice(0, limit).map(wordMode === "all" ? itemAll : itemPrio).join("");
       if (!list.length) html = '<div class="empty">조건에 맞는 단어가 없습니다.</div>';
-      $("#wl", el).innerHTML = html + (list.length > limit ? '<button class="btn more" id="wm" style="margin:12px">더 보기 (' + (list.length - limit) + "개 남음)</button>" : "");
-      var m = $("#wm", el); if (m) m.onclick = function () { limit += 100; draw(); };
+      $("#wl", el).innerHTML = html + (list.length > limit ? '<button class="btn more" id="wm" style="margin:12px">더 보기 (' + (list.length - limit).toLocaleString() + "개 남음)</button>" : "");
+      var mb = $("#wm", el); if (mb) mb.onclick = function () { limit += 150; draw(); };
     }
     $("#wl", el).onclick = function (e) {
       var s = e.target.closest(".star");
@@ -148,7 +216,7 @@
       var sp = e.target.closest("[data-say]"); if (sp) { say(sp.dataset.say); return; }
       var m = e.target.closest(".m"); if (m) m.classList.toggle("peek");
     };
-    draw();
+    setMode(wordMode);
   };
 
   /* ---------- 카드 ---------- */
