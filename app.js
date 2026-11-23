@@ -267,7 +267,7 @@
     var years = [2022, 2023, 2024, 2025, 2026];
     el.innerHTML =
       '<div><div class="eyebrow">기출 재현 · 1~8번</div><h2>실제 보기로 다시 풀기</h2></div>' +
-      '<p class="lead">1~5번은 밑줄 친 표적어와 뜻이 가장 가까운 보기, 6~8번은 문맥상 빈칸에 들어갈 보기를 고르는 문제입니다. 답을 고르면 네 보기의 뜻이 모두 나옵니다.</p>' +
+      '<p class="lead">1~5번은 밑줄 친 표적어와 뜻이 가장 가까운 보기를 고릅니다. 6~8번(어휘 빈칸)은 지문 원문이 자료에 없어서, 빈칸 정답의 뜻과 해설의 단서를 보고 보기를 고르는 방식으로 바꿨습니다. 답을 고르면 네 보기의 뜻이 모두 나옵니다.</p>' +
       '<div class="row" id="ey">' + years.map(function (y) { return '<button class="chip' + (y === examYear ? " on" : "") + '" data-y="' + y + '">' + y + "학년도</button>"; }).join("") +
       '</div><div class="score" id="es"></div><div class="grid" id="eg" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))"></div>';
     $("#ey", el).onclick = function (e) {
@@ -287,13 +287,14 @@
         return '<div class="panel" data-id="' + id + '" style="display:flex;flex-direction:column;gap:10px">' +
           '<div class="row" style="justify-content:space-between"><b class="num">' + c.q + '번</b><span class="tag">' + esc(c.t) + "</span></div>" +
           (c.t === "동의어" ? '<div><small style="color:var(--muted)">밑줄 친 표현과 뜻이 가장 가까운 것은?</small><div class="q-target" style="text-decoration:underline;text-underline-offset:6px;text-decoration-color:var(--omr)">' + esc(c.tw) + "</div></div>"
-            : '<div><small style="color:var(--muted)">문맥상 빈칸에 들어갈 가장 적절한 것은?</small><div class="q-target">[&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;]</div></div>') +
+            : '<div><small style="color:var(--muted)">빈칸에 들어간 단어의 뜻이 다음과 같을 때, 알맞은 보기는?</small><div class="fm" style="font-size:1.35rem;margin-top:4px">' + esc(c.m) + "</div>" +
+              (c.h ? '<small style="color:var(--muted)">지문 단서: ' + esc(c.h) + "</small>" : "") + "</div>") +
           '<div class="opts">' + c.o.map(function (o) {
             var cls = solved && o.ok ? " correct" : "";
             return '<button class="opt' + cls + '" data-no="' + o.no + '"' + (solved ? " disabled" : "") + '><span class="bubble">' + CIRC[o.no] + '</span><span><span class="ow">' + esc(o.w) + '</span><br><span class="om"' + (solved ? "" : " hidden") + ">" + esc(o.m) + "</span></span></button>";
           }).join("") + "</div>" +
           '<div class="explain"' + (solved ? "" : " hidden") + "><p><b>" + esc(c.tw) + (c.t === "동의어" ? " = " + esc(c.a) : "") + "</b> · " + esc(c.m) + "</p>" +
-          (c.h ? "<p style=\"color:var(--muted);font-size:.88rem\">단서: " + esc(c.h) + "</p>" : "") +
+          (c.h && c.t === "동의어" ? "<p style=\"color:var(--muted);font-size:.88rem\">단서: " + esc(c.h) + "</p>" : "") +
           (c.re ? "<p style=\"color:var(--omr);font-size:.88rem\">재출제: " + esc(c.re) + "</p>" : "") + "</div></div>";
       }).join("");
     }
