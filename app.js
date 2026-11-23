@@ -6,7 +6,7 @@
 
   /* ---------- 저장소 (실패해도 동작) ---------- */
   var KEY = "kpu-word-v1";
-  var state = { known: {}, wrong: {}, quiz: { right: 0, total: 0 }, exam: {} };
+  var state = { known: {}, wrong: {}, quiz: { right: 0, total: 0 }, ans: {} };
   try { var saved = JSON.parse(localStorage.getItem(KEY) || "null"); if (saved) Object.assign(state, saved); } catch (e) {}
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 
@@ -34,6 +34,17 @@
   }, true);
 
   /* ---------- 단어 풀 ---------- */
+  var E = window.EXAM_DATA || {};
+  var EYEARS = Object.keys(E).map(Number).sort();
+  var TIERS = ["직접 출제", "반복 학술", "심화", "일반", "기본", "고유명사"];
+  var TIER_INFO = {
+    "직접 출제": "1~8번 표적어·정답·보기와 17~25번 한 단어 정답",
+    "반복 학술": "2개년 이상 나온 학술·중급 어휘 (일상 기본어 제외)",
+    "심화": "1개년만 나왔지만 일상에서 드문 고난도 어휘",
+    "일반": "1개년만 나온 중급 어휘",
+    "기본": "일상에서 아주 흔한 단어와 문제 지시문 단어",
+    "고유명사": "인명·지명·상표 등"
+  };
   var pools = {};
   function add(pool, w, m, src, syn) {
     if (!w || !m) return;
@@ -47,29 +58,27 @@
   function yearsText(a) {
     return [2022, 2023, 2024, 2025, 2026].map(function (y, i) { return a.c[i] ? y + "년 " + a.c[i] + "회" : ""; }).filter(Boolean).join(" · ");
   }
-  pools.p1 = []; pools.p2 = []; pools.p3 = []; pools.core = []; pools.opts = []; pools.all = []; pools.every = []; pools.multi = [];
-  D.vocab.forEach(function (v) {
-    var key = v.p.indexOf("1순위") === 0 ? "p1" : v.p.indexOf("2순위") === 0 ? "p2" : "p3";
-    add(pools[key], v.w, v.m, v.p, v.s);
+  var TIER_KEY = { "직접 출제": "direct", "반복 학술": "academic", "심화": "advanced", "일반": "general", "기본": "basic" };
+  ["direct", "academic", "advanced", "general", "basic", "core", "opts", "every", "all"].forEach(function (k) { pools[k] = []; });
+  D.all.forEach(function (a) {
+    if (a.t === "고유명사") return;
+    var src = a.t + (a.tg ? "(" + a.tg + ")" : "") + " · " + a.y + "개년 " + a.n + "회";
+    add(pools[TIER_KEY[a.t]], a.w, a.m, src, a.s);
+    if (a.t !== "기본") add(pools.every, a.w, a.m, src, a.s);
   });
   D.core.forEach(function (c) {
     add(pools.core, c.tw, c.m, c.yr + "년 " + c.q + "번 " + (c.t === "동의어" ? "표적어" : "정답"), c.s);
     c.o.forEach(function (o) { add(pools.opts, o.w, o.m, c.yr + "년 " + c.q + "번 보기", o.s); });
   });
-  D.all.forEach(function (a) {
-    if (isProper(a.m)) return;
-    var src = "기출 " + a.n + "회 · " + a.y + "개년";
-    add(pools.every, a.w, a.m, src, a.s);
-    if (a.y >= 3) add(pools.multi, a.w, a.m, src, a.s);
-  });
-  ["p1", "p2", "p3", "core", "opts", "every"].forEach(function (k) { pools[k].forEach(function (x) { add(pools.all, x.w, x.m, x.src, x.s); }); });
+  ["core", "opts", "every", "basic"].forEach(function (k) { pools[k].forEach(function (x) { add(pools.all, x.w, x.m, x.src, x.s); }); });
   var POOL_NAMES = {
-    p1: "1순위 (직접출제·3개년 반복)", p2: "2순위 (2개년 반복)", p3: "3순위 (심화)",
-    core: "5개년 1~8번 핵심 40", opts: "1~8번 보기 단어", multi: "3개년 이상 반복 단어", every: "파일 전체 단어(고유명사 제외)", wrong: "오답노트", unknown: "아직 모르는 단어"
+    direct: "직접 출제 어휘", academic: "반복 학술 어휘", advanced: "심화 어휘", general: "일반 어휘",
+    core: "1~8번 표적어·정답 40", opts: "1~8번 보기 단어", every: "기본어·고유명사 제외 전체", basic: "기본 어휘",
+    wrong: "오답노트", unknown: "아직 모르는 단어"
   };
   function getPool(key) {
     if (key === "wrong") return pools.all.filter(function (x) { return state.wrong[x.k]; });
-    if (key === "unknown") return pools.all.filter(function (x) { return !state.known[x.k]; });
+    if (key === "unknown") return pools.every.filter(function (x) { return !state.known[x.k]; });
     return pools[key] || [];
   }
   function poolSelect(id, cur) {
@@ -78,6 +87,103 @@
     }).join("") + "</select>";
   }
   function markWrong(k) { state.wrong[k] = (state.wrong[k] || 0) + 1; save(); }
+
+  /* ---------- 기출 원문 ---------- */
+  state.ans = state.ans || {};
+  var TARGET = {}, CORE = {};
+  D.core.forEach(function (c) { CORE[c.yr + "-" + c.q] = c; if (c.t === "동의어") TARGET[c.yr + "-" + c.q] = c.tw; });
+  var CTX = {};
+  D.ctx.forEach(function (c) { CTX[c.yr + "-" + c.q] = c; });
+  function escRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
+  function qType(n) { return n <= 5 ? "동의어" : n <= 8 ? "어휘 빈칸" : n <= 14 ? "문법 빈칸" : n <= 16 ? "문법 오류" : n <= 25 ? "문맥·논리 빈칸" : "독해"; }
+  function fmt(t, key) {
+    var h = esc(t);
+    var tw = TARGET[key];
+    if (tw) h = h.replace(new RegExp("\\b(" + escRe(esc(tw)) + ")", "i"), '<u class="tgt">$1</u>');
+    h = h.replace(/_{3,}/g, '<span class="blank" aria-label="빈칸"></span>');
+    h = h.replace(/[①②③④]/g, function (m) { return '<b class="mk">' + m + "</b>"; });
+    return h;
+  }
+  // 문항 카드. extra(y, q)는 정답 확인 뒤 해설 아래에 붙일 HTML을 돌려준다.
+  function qCard(y, q, opt) {
+    opt = opt || {};
+    var key = y + "-" + q.q, chosen = state.ans[key], solved = chosen != null || opt.reveal;
+    var psg = opt.passage && q.psg != null ? '<div class="psg">' + fmt(E[y].passages[q.psg], key) + "</div>" : "";
+    var html = '<div class="qcard" data-key="' + key + '">' + psg +
+      '<div class="row qhead"><b class="num">' + (opt.showYear ? y + " · " : "") + q.q + '번</b><span class="tag">' + qType(q.q) + "</span>" +
+      (q.pts !== 2.5 ? '<span class="tag plain">' + q.pts + "점</span>" : "") + "</div>" +
+      '<div class="stem">' + fmt(q.stem, key) + "</div>" +
+      '<div class="opts">' + q.opts.map(function (o, i) {
+        var no = i + 1, cls = "";
+        if (solved && no === q.a) cls = " correct";
+        else if (chosen === no) cls = " wrong";
+        var speak = o && o.length < 45 && /[a-z]/i.test(o) && !/^\(?[A-D]\)?/.test(o) ? spk(o, true) : "";
+        return '<button class="opt' + cls + '" data-no="' + no + '"' + (solved ? " disabled" : "") + '><span class="bubble">' + CIRC[no] + '</span><span class="otext">' + esc(o) + speak + "</span></button>";
+      }).join("") + "</div>";
+    if (solved) {
+      html += '<div class="explain"><p><b>정답 ' + CIRC[q.a] + "</b>" + (chosen != null ? (chosen === q.a ? ' · <span class="ok">맞았습니다</span>' : ' · <span class="ng">고른 답 ' + CIRC[chosen] + "</span>") : "") + "</p>" +
+        (q.ex ? '<p class="ex">' + esc(q.ex) + "</p>" : "") + (opt.extra ? opt.extra(y, q.q) : "") + "</div>";
+    }
+    return html + "</div>";
+  }
+  // 문항 클릭 처리: 답을 기록하고 그 카드만 다시 그린다.
+  function bindQ(container, opt, after) {
+    container.addEventListener("click", function (e) {
+      var b = e.target.closest(".qcard .opt"); if (!b || b.disabled) return;
+      var card = b.closest(".qcard"), key = card.dataset.key, p = key.split("-"), y = +p[0], n = +p[1];
+      var q = E[y].questions[n - 1], no = +b.dataset.no;
+      state.ans[key] = no;
+      if (no !== q.a && CORE[key]) { markWrong(CORE[key].tw.toLowerCase()); var a = CORE[key].o.filter(function (o) { return o.ok; })[0]; if (a) markWrong(a.w.toLowerCase()); }
+      save();
+      var tmp = document.createElement("div");
+      tmp.innerHTML = qCard(y, q, Object.assign({}, opt, { passage: card.querySelector(".psg") != null, reveal: false }));
+      card.replaceWith(tmp.firstChild);
+      if (after) after();
+    });
+  }
+  function score(y, from, to) {
+    var r = { done: 0, ok: 0, pts: 0, total: 0, n: 0 };
+    (E[y] ? E[y].questions : []).forEach(function (q) {
+      if (q.q < from || q.q > to) return;
+      r.n++; r.total += q.pts;
+      var c = state.ans[y + "-" + q.q];
+      if (c != null) { r.done++; if (c === q.a) { r.ok++; r.pts += q.pts; } }
+    });
+    return r;
+  }
+  function coreExtra(y, n) {
+    var c = CORE[y + "-" + n]; if (!c) return "";
+    return '<div class="optinfo">' + c.o.map(function (o) {
+      return "<div><b>" + CIRC[o.no] + " " + esc(o.w) + "</b>" + spk(o.w) + " " + esc(o.m) + (o.s ? '<br><span class="osyn">동의어 ' + esc(o.s) + "</span>" : "") + "</div>";
+    }).join("") + (c.s ? '<p class="syn"><b>동의어</b> ' + esc(c.tw) + " → " + esc(c.s) + "</p>" : "") +
+    (c.re ? '<p style="color:var(--omr);font-size:.88rem">재출제: ' + esc(c.re) + "</p>" : "") + "</div>";
+  }
+  function ctxExtra(y, n) {
+    var c = CTX[y + "-" + n]; if (!c) return "";
+    return '<p class="tipline"><b>판단 근거</b> ' + esc(c.why) + " · <b>풀이 기술</b> " + esc(c.tip) + "</p>";
+  }
+  // 단어의 기출 예문 찾기
+  function examples(a, max) {
+    var forms = (a.f || a.w).split(", ").filter(Boolean).sort(function (x, y) { return y.length - x.length; });
+    var re = new RegExp("\\b(" + forms.map(escRe).join("|") + ")(?:['’]s)?\\b", "i");
+    var out = [];
+    EYEARS.slice().reverse().forEach(function (y) {
+      if (out.length >= max) return;
+      var ex = E[y];
+      var units = ex.passages.map(function (p, i) {
+        var qs = ex.questions.filter(function (q) { return q.psg === i; });
+        return { t: p, q: qs.length ? qs[0].q + (qs.length > 1 ? "~" + qs[qs.length - 1].q : "") : "" };
+      }).concat(ex.questions.map(function (q) { return { t: q.stem + " " + (q.inline ? "" : q.opts.join(" / ")), q: q.q }; }));
+      units.forEach(function (u) {
+        if (out.length >= max) return;
+        var sents = u.t.split(/(?<=[.!?”"])\s+(?=[A-Z(“"])/);
+        for (var i = 0; i < sents.length && out.length < max; i++) {
+          if (re.test(sents[i])) { out.push({ y: y, q: u.q, h: esc(sents[i]).replace(new RegExp("\\b(" + forms.map(function (f) { return escRe(esc(f)); }).join("|") + ")", "ig"), "<mark>$1</mark>").replace(/_{3,}/g, "____") }); break; }
+        }
+      });
+    });
+    return out;
+  }
 
   /* ---------- 라우팅 ---------- */
   var views = {};
@@ -97,27 +203,31 @@
 
   /* ---------- 홈 ---------- */
   views.home = function (el) {
-    var total = pools.all.length;
-    var known = pools.all.filter(function (x) { return state.known[x.k]; }).length;
+    var total = pools.every.length;
+    var known = pools.every.filter(function (x) { return state.known[x.k]; }).length;
     var wrongN = Object.keys(state.wrong).length;
-    var examDone = Object.keys(state.exam).length;
-    var examRight = Object.keys(state.exam).filter(function (k) { return state.exam[k]; }).length;
+    var done = 0, ok = 0;
+    EYEARS.forEach(function (y) { var s = score(y, 1, 40); done += s.done; ok += s.ok; });
     var pct = total ? Math.round(known / total * 100) : 0;
+    var tierCount = TIERS.map(function (t) { return [t, D.all.filter(function (a) { return a.t === t; }).length]; });
     el.innerHTML =
       '<div><div class="eyebrow">한국공학대학교 편입영어 · 2022–2026 기출</div><h2>기출 단어로 공부하기</h2></div>' +
-      '<p class="lead">5개년 200문항에서 뽑은 기출 어휘입니다. 직접 출제된 단어와 여러 해 반복된 단어부터 외우고, 1~8번 기출 문제를 실제 보기 그대로 다시 풀어 보세요.</p>' +
+      '<p class="lead">5개년 시험지 200문항의 원문에서 뽑은 단어 ' + D.all.length.toLocaleString() + '개를 5개년 기준 등급으로 나눴습니다. 직접 출제 어휘와 반복 학술 어휘부터 외우고, 실전 기출로 원문 그대로 풀어 보세요.</p>' +
       '<div class="stats">' +
-        '<div class="stat"><small>외운 단어</small><b>' + known + '<small> / ' + total + '</small></b><div class="bar"><i style="width:' + pct + '%"></i></div></div>' +
+        '<div class="stat"><small>외운 단어 (기본어 제외)</small><b>' + known + '<small> / ' + total + '</small></b><div class="bar"><i style="width:' + pct + '%"></i></div></div>' +
+        '<div class="stat"><small>실전 기출</small><b>' + ok + '<small> / ' + done + ' 정답</small></b><small>5개년 200문항 중 ' + done + "문항 풀이</small></div>" +
         '<div class="stat"><small>오답노트</small><b>' + wrongN + '</b><small>틀린 단어</small></div>' +
-        '<div class="stat"><small>기출 1~8번</small><b>' + examRight + '<small> / ' + examDone + ' 정답</small></b><small>전체 40문항</small></div>' +
         '<div class="stat"><small>퀴즈 누적</small><b>' + state.quiz.right + '<small> / ' + state.quiz.total + '</small></b><small>정답 / 문제</small></div>' +
       "</div>" +
+      '<div class="panel"><h3>5개년 단어 등급</h3><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>등급</th><th class="num">단어 수</th><th>기준</th></tr></thead><tbody>' +
+        tierCount.map(function (r) { return '<tr><td><a href="#words" data-tier="' + r[0] + '">' + r[0] + '</a></td><td class="num">' + r[1] + "</td><td>" + TIER_INFO[r[0]] + "</td></tr>"; }).join("") +
+      '</tbody></table></div><p class="lead" style="font-size:.82rem;margin-top:8px">일상 빈도는 영어 말뭉치 빈도(wordfreq)로 판단했습니다. 5개년 동안 1~8번 표적·정답 어휘가 그대로 다시 나온 경우는 1번(2024 plead → 2025 pleaded)뿐이라, 보기 단어와 반복 학술 어휘까지 넓게 익히는 것이 좋습니다.</p></div>' +
       '<div class="panel"><h3>추천 학습 순서</h3><ol class="steps" style="margin-top:10px">' +
-        '<li><a href="#words">단어장</a>의 우선 암기 1순위(직접 출제·3개년 반복) 70개부터 뜻 가리고 외우기. 이후 파일 전체 단어 ' + D.all.length.toLocaleString() + '개를 여러 해 나온 순서로 확장</li>' +
-        '<li><a href="#cards">카드</a>로 넘기며 아는 단어 체크 → 모르는 단어만 반복</li>' +
-        '<li><a href="#exam">기출 1~8번</a>을 실제 보기로 풀고, 오답 보기의 뜻까지 확인</li>' +
-        '<li><a href="#quiz">퀴즈</a>로 점검, 틀린 단어는 <a href="#review">오답노트</a>에 자동 저장</li>' +
-        '<li><a href="#context">문맥 빈칸</a>과 <a href="#tips">풀이법</a>으로 17~40번 대비</li>' +
+        '<li><a href="#words">단어장</a>에서 직접 출제 → 반복 학술 → 심화 순으로 뜻 가리고 외우기</li>' +
+        '<li><a href="#cards">카드</a>로 넘기며 아는 단어 체크, 모르는 단어만 반복</li>' +
+        '<li><a href="#exam">기출 1~8번</a>을 원문 문장으로 풀고 보기 단어의 뜻·동의어까지 확인</li>' +
+        '<li><a href="#context">문맥 빈칸</a>(17~25번)으로 연결어·논리 단서 연습</li>' +
+        '<li><a href="#real">실전 기출</a>로 연도별 40문항을 시험처럼 풀기</li>' +
       "</ol></div>" +
       '<div class="panel"><h3>시험 구성 (40문항 / 60분)</h3><div class="table-wrap" style="margin-top:8px"><table>' +
         '<thead><tr><th>문항</th><th>유형</th><th class="num">문항 수</th><th>비중</th></tr></thead><tbody>' +
@@ -125,49 +235,30 @@
           return "<tr><td class=num>" + r[0] + "</td><td>" + r[1] + "</td><td class=num>" + r[2] + "</td><td class=num>" + r[3] + "</td></tr>";
         }).join("") +
       "</tbody></table></div>" +
-      '<p class="lead" style="margin-top:10px;font-size:.88rem">권장 시간: 1~8번 6분 · 9~16번 9분 · 17~25번 15분 · 26~40번 26분 · 검토 4분. 오답 감점이 없으니 모든 문항에 답하세요.</p></div>' +
-      '<p class="lead" style="font-size:.82rem">빈도는 과거 기출의 출현 횟수이며 출제 확률이 아닙니다. 1~8번 표적·정답 어휘가 그대로 다시 나온 경우는 5년간 1번(2024 plead → 2025 pleaded)뿐이므로, 보기 단어와 반복 학술어까지 넓게 익히는 것이 좋습니다. 학습 기록은 이 브라우저에만 저장됩니다.</p>';
+      '<p class="lead" style="margin-top:10px;font-size:.88rem">권장 시간: 1~8번 6분 · 9~16번 9분 · 17~25번 15분 · 26~40번 26분 · 검토 4분. 오답 감점이 없으니 모든 문항에 답하세요. 학습 기록은 이 브라우저에만 저장됩니다.</p></div>';
+    el.addEventListener("click", function (e) { var a = e.target.closest("[data-tier]"); if (a) wordTier = a.dataset.tier; });
   };
 
   /* ---------- 단어장 ---------- */
-  var wordMode = "all";
+  var wordTier = "직접 출제";
   views.words = function (el) {
-    var filter = "all", q = "", hide = false, limit = 60, year = 0;
+    var q = "", hide = false, limit = 60, year = 0, sort = "tier";
     el.innerHTML =
-      '<div><div class="eyebrow">단어장</div><h2 id="wt"></h2></div>' +
-      '<div class="row" id="wmode">' +
-        '<button class="chip" data-m="all">파일 전체 단어 ' + D.all.length.toLocaleString() + "개</button>" +
-        '<button class="chip" data-m="prio">우선 암기 ' + D.vocab.length + "개</button></div>" +
-      '<p class="lead" id="wd"></p>' +
-      '<div class="row" id="wf"></div><div class="row" id="wy"></div>' +
-      '<div class="row"><input type="search" id="wq" placeholder="영단어, 뜻, 동의어로 검색"><button class="btn" id="wh">뜻 가리기</button></div>' +
+      '<div><div class="eyebrow">단어장</div><h2>5개년 기출 단어 ' + D.all.length.toLocaleString() + "개</h2></div>" +
+      '<p class="lead">2022~2026학년도 시험지 원문(지문·문제·보기)에 나온 단어를 표제어 단위로 묶었습니다. 같은 단어의 활용형(복수·시제·분사)만 묶고, important / importance처럼 다른 단어는 나눴습니다. \'뜻 보충\'은 엑셀에 뜻이 없어 새로 단 뜻입니다.</p>' +
+      '<div class="row" id="wf"></div><p class="lead" id="wti" style="font-size:.85rem"></p><div class="row" id="wy"></div>' +
+      '<div class="row"><input type="search" id="wq" placeholder="영단어, 뜻, 동의어로 검색"><select id="ws"><option value="tier">등급순</option><option value="freq">출현 많은 순</option><option value="abc">알파벳순</option></select><button class="btn" id="wh">뜻 가리기</button></div>' +
       '<div class="counter" id="wc"></div><div class="wlist" id="wl"></div>';
-
-    var CATS = {
-      prio: [["all", "전체"], ["1순위 · 직접 출제", "직접 출제"], ["1순위 · 3개년 반복", "3개년 반복"], ["2순위 · 2개년 반복", "2개년 반복"], ["2순위 · 같은 연도 고빈도", "같은 연도 고빈도"], ["3순위 · 심화 어휘", "심화"], ["unknown", "안 외운 단어"]],
-      all: [["all", "전체"], ["5", "5개년 모두"], ["4", "4개년"], ["3", "3개년"], ["2", "2개년"], ["1", "1개년만"], ["noproper", "고유명사 제외"], ["unknown", "안 외운 단어"]]
-    };
-    function setMode(m) {
-      wordMode = m; filter = "all"; year = 0; limit = 60;
-      el.querySelectorAll("#wmode .chip").forEach(function (c) { c.classList.toggle("on", c.dataset.m === m); });
-      $("#wt", el).textContent = m === "all" ? "기출 전체 단어 " + D.all.length.toLocaleString() + "개" : "3개년 우선 암기 어휘 " + D.vocab.length + "개";
-      $("#wd", el).textContent = m === "all"
-        ? "2022~2026학년도 문제·지문·보기에 나온 모든 단어를 출현 횟수 순으로 정리했습니다. 같은 어간의 활용형은 한 단어로 묶었습니다. '뜻 보충' 표시는 엑셀에 뜻이 없어 새로 단 뜻입니다. 동의어는 기출 1~5번 정답 쌍을 먼저 보여 줍니다."
-        : "우선순위는 직접 출제 > 3개년 반복 > 2개년 반복 순입니다. 별표를 누르면 외운 단어로 표시됩니다.";
-      $("#wf", el).innerHTML = CATS[m].map(function (c) { return '<button class="chip' + (c[0] === filter ? " on" : "") + '" data-f="' + esc(c[0]) + '">' + c[1] + "</button>"; }).join("");
-      $("#wy", el).innerHTML = m === "all" ? [0, 2022, 2023, 2024, 2025, 2026].map(function (y) {
-        return '<button class="chip' + (y === year ? " on" : "") + '" data-y="' + y + '">' + (y ? y + "학년도" : "모든 연도") + "</button>";
-      }).join("") : "";
-      $("#wy", el).hidden = m !== "all";
-      draw();
+    var chips = ["전체"].concat(TIERS).concat(["안 외운 단어"]);
+    function drawChips() {
+      $("#wf", el).innerHTML = chips.map(function (c) {
+        var n = c === "전체" ? D.all.length : c === "안 외운 단어" ? D.all.filter(function (a) { return a.t !== "고유명사" && a.t !== "기본" && !state.known[a.w.toLowerCase()]; }).length : D.all.filter(function (a) { return a.t === c; }).length;
+        return '<button class="chip' + (c === wordTier ? " on" : "") + '" data-f="' + c + '">' + c + ' <span class="num">' + n + "</span></button>";
+      }).join("");
+      $("#wti", el).textContent = TIER_INFO[wordTier] || (wordTier === "안 외운 단어" ? "기본어·고유명사를 뺀 단어 중 별표를 누르지 않은 단어" : "");
     }
-    $("#wmode", el).onclick = function (e) { var b = e.target.closest("[data-m]"); if (b && b.dataset.m !== wordMode) setMode(b.dataset.m); };
-    $("#wf", el).onclick = function (e) {
-      var b = e.target.closest("[data-f]"); if (!b) return;
-      filter = b.dataset.f; limit = 60;
-      el.querySelectorAll("#wf .chip").forEach(function (c) { c.classList.toggle("on", c === b); });
-      draw();
-    };
+    $("#wy", el).innerHTML = [0].concat(EYEARS).map(function (y) { return '<button class="chip' + (y === year ? " on" : "") + '" data-y="' + y + '">' + (y ? y + "학년도" : "모든 연도") + "</button>"; }).join("");
+    $("#wf", el).onclick = function (e) { var b = e.target.closest("[data-f]"); if (!b) return; wordTier = b.dataset.f; limit = 60; drawChips(); draw(); };
     $("#wy", el).onclick = function (e) {
       var b = e.target.closest("[data-y]"); if (!b) return;
       year = +b.dataset.y; limit = 60;
@@ -175,65 +266,57 @@
       draw();
     };
     $("#wq", el).oninput = function () { q = this.value.trim().toLowerCase(); limit = 60; draw(); };
+    $("#ws", el).onchange = function () { sort = this.value; draw(); };
     $("#wh", el).onclick = function () { hide = !hide; this.textContent = hide ? "뜻 보이기" : "뜻 가리기"; $("#wl", el).classList.toggle("hide-m", hide); };
-
-    function match(v) {
-      return !q || v.w.toLowerCase().indexOf(q) >= 0 || v.m.indexOf(q) >= 0 || (v.f && v.f.toLowerCase().indexOf(q) >= 0) || (v.s && v.s.toLowerCase().indexOf(q) >= 0);
-    }
-    function listPrio() {
-      return D.vocab.filter(function (v) {
-        if (filter === "unknown") { if (state.known[v.w.toLowerCase()]) return false; }
-        else if (filter !== "all" && v.p !== filter) return false;
-        return match(v);
-      });
-    }
-    function listAll() {
-      return D.all.filter(function (v) {
-        if (filter === "unknown") { if (state.known[v.w.toLowerCase()]) return false; }
-        else if (filter === "noproper") { if (isProper(v.m)) return false; }
-        else if (filter !== "all" && v.y !== +filter) return false;
+    function list() {
+      var r = D.all.filter(function (v) {
+        if (wordTier === "안 외운 단어") { if (v.t === "고유명사" || v.t === "기본" || state.known[v.w.toLowerCase()]) return false; }
+        else if (wordTier !== "전체" && v.t !== wordTier) return false;
         if (year && !v.c[year - 2022]) return false;
-        return match(v);
+        return !q || v.w.toLowerCase().indexOf(q) >= 0 || v.m.indexOf(q) >= 0 || v.f.indexOf(q) >= 0 || (v.s && v.s.toLowerCase().indexOf(q) >= 0);
       });
+      if (sort === "freq") r = r.slice().sort(function (a, b) { return b.n - a.n || b.y - a.y; });
+      if (sort === "abc") r = r.slice().sort(function (a, b) { return a.w < b.w ? -1 : 1; });
+      return r;
     }
-    function itemPrio(v) {
+    function item(v) {
       var k = v.w.toLowerCase();
-      var yrs = YEARS3.map(function (y, i) { return v.c[i] ? y + "(" + v.q[i] + "번)" : ""; }).filter(Boolean).join(" · ");
-      return row(k, v.w, v.m, v.s, esc(yrs) + (v.f && v.f !== v.w ? " · 어형: " + esc(v.f) : ""),
-        '<span class="tag' + (v.p.indexOf("3순위") === 0 ? " plain" : "") + '">' + esc(v.p.split(" · ")[1] || v.p) + '</span> <span class="meta num">' + v.n + "회</span>");
-    }
-    function itemAll(v) {
-      var k = v.w.toLowerCase();
-      var forms = v.f && v.f.toLowerCase() !== k ? " · 어형: " + esc(v.f) : "";
-      return row(k, v.w, v.m, v.s, esc(yearsText(v)) + forms + (v.x ? ' · <span style="color:var(--omr)">뜻 보충</span>' : ""),
-        '<span class="tag plain">' + v.y + '개년</span> <span class="meta num">' + v.n + "회</span>", v.q);
-    }
-    function row(k, w, m, syn, meta, side, qnums) {
+      var forms = v.fc && v.fc !== k + "(" + v.n + ")" ? " · 어형: " + esc(v.fc) : "";
       return '<div class="witem"><button class="star' + (state.known[k] ? " on" : "") + '" data-k="' + esc(k) + '" aria-label="외운 단어 표시">★</button>' +
-        '<div style="min-width:0"><div class="row" style="gap:8px"><span class="w">' + esc(w) + "</span>" +
-        spk(w) + "</div>" +
-        '<div class="m">' + esc(m) + "</div>" + (syn ? '<div class="syn"><b>동의어</b> ' + esc(syn) + "</div>" : "") + '<div class="meta">' + meta + "</div>" +
-        (qnums ? '<details class="meta"><summary>출제 문항 번호</summary>' + esc(qnums) + "</details>" : "") + "</div>" +
-        '<div class="side">' + side + "</div></div>";
+        '<div style="min-width:0"><div class="row" style="gap:8px"><span class="w">' + esc(v.w) + "</span>" + spk(v.w) + "</div>" +
+        '<div class="m">' + esc(v.m) + "</div>" + (v.s ? '<div class="syn"><b>동의어</b> ' + esc(v.s) + "</div>" : "") +
+        '<div class="meta">' + esc(yearsText(v)) + forms + (v.x ? ' · <span style="color:var(--omr)">뜻 보충</span>' : "") + "</div>" +
+        '<details class="meta exd" data-w="' + esc(k) + '"><summary>기출 예문 · 문항 번호</summary><div class="exbox"></div></details></div>' +
+        '<div class="side"><span class="tag' + (v.t === "직접 출제" ? "" : " plain") + '">' + esc(v.t) + "</span>" + (v.tg ? ' <span class="tag plain">' + esc(v.tg) + "</span>" : "") + ' <span class="meta num">' + v.y + "개년 " + v.n + "회</span></div></div>";
     }
+    var BYW = {};
+    D.all.forEach(function (a) { BYW[a.w.toLowerCase()] = a; });
     function draw() {
-      var list = wordMode === "all" ? listAll() : listPrio();
-      $("#wc", el).textContent = list.length.toLocaleString() + "개";
-      var html = list.slice(0, limit).map(wordMode === "all" ? itemAll : itemPrio).join("");
-      if (!list.length) html = '<div class="empty">조건에 맞는 단어가 없습니다.</div>';
-      $("#wl", el).innerHTML = html + (list.length > limit ? '<button class="btn more" id="wm" style="margin:12px">더 보기 (' + (list.length - limit).toLocaleString() + "개 남음)</button>" : "");
+      var l = list();
+      $("#wc", el).textContent = l.length.toLocaleString() + "개";
+      var html = l.slice(0, limit).map(item).join("");
+      if (!l.length) html = '<div class="empty">조건에 맞는 단어가 없습니다.</div>';
+      $("#wl", el).innerHTML = html + (l.length > limit ? '<button class="btn more" id="wm" style="margin:12px">더 보기 (' + (l.length - limit).toLocaleString() + "개 남음)</button>" : "");
       var mb = $("#wm", el); if (mb) mb.onclick = function () { limit += 150; draw(); };
     }
+    $("#wl", el).addEventListener("toggle", function (e) {
+      var d = e.target; if (!d.classList || !d.classList.contains("exd") || !d.open) return;
+      var box = d.querySelector(".exbox"); if (box.dataset.done) return;
+      var a = BYW[d.dataset.w], ex = examples(a, 3);
+      box.innerHTML = (ex.length ? ex.map(function (x) { return '<p class="exs"><span class="tag plain num">' + x.y + " · " + x.q + "번</span> " + x.h + "</p>"; }).join("") : "<p>예문을 찾지 못했습니다.</p>") +
+        '<p class="num">문항 번호 ' + esc(a.q) + "</p>";
+      box.dataset.done = 1;
+    }, true);
     $("#wl", el).onclick = function (e) {
       var s = e.target.closest(".star");
       if (s) { var k = s.dataset.k; if (state.known[k]) delete state.known[k]; else state.known[k] = 1; save(); s.classList.toggle("on"); return; }
       var m = e.target.closest(".m"); if (m) m.classList.toggle("peek");
     };
-    setMode(wordMode);
+    drawChips(); draw();
   };
 
   /* ---------- 카드 ---------- */
-  var cardPool = "p1";
+  var cardPool = "direct";
   views.cards = function (el) {
     var deck = [], i = 0, flipped = false, front = "en";
     el.innerHTML =
@@ -290,7 +373,7 @@
   document.addEventListener("keydown", function (e) { var v = $("section.view"); if (v && v._key) v._key(e); });
 
   /* ---------- 퀴즈 ---------- */
-  var quizPool = "p1";
+  var quizPool = "direct";
   views.quiz = function (el) {
     var mode = "en", queue = [], cur = null, n = 0, right = 0;
     el.innerHTML =
@@ -369,94 +452,98 @@
 
   /* ---------- 기출 1~8번 ---------- */
   var examYear = 2026;
+  function yearChips(id, cur) {
+    return '<div class="row" id="' + id + '">' + EYEARS.map(function (y) { return '<button class="chip' + (y === cur ? " on" : "") + '" data-y="' + y + '">' + y + "학년도</button>"; }).join("") + "</div>";
+  }
+  function resetRow(id) {
+    return '<span id="' + id + '"><button class="chip" data-act="ask">다시 풀기</button><span hidden data-confirm> <button class="btn bad" data-act="yes">기록 지우기</button> <button class="btn" data-act="no">취소</button></span></span>';
+  }
+  function bindReset(el, id, clear) {
+    $("#" + id, el).onclick = function (e) {
+      var b = e.target.closest("[data-act]"); if (!b) return;
+      var c = this.querySelector("[data-confirm]");
+      if (b.dataset.act === "ask") c.hidden = false;
+      else if (b.dataset.act === "no") c.hidden = true;
+      else clear();
+    };
+  }
   views.exam = function (el) {
-    var years = [2022, 2023, 2024, 2025, 2026];
     el.innerHTML =
-      '<div><div class="eyebrow">기출 재현 · 1~8번</div><h2>실제 보기로 다시 풀기</h2></div>' +
-      '<p class="lead">1~5번은 밑줄 친 표적어와 뜻이 가장 가까운 보기를 고릅니다. 6~8번(어휘 빈칸)은 지문 원문이 자료에 없어서, 빈칸 정답의 뜻과 해설의 단서를 보고 보기를 고르는 방식으로 바꿨습니다. 답을 고르면 네 보기의 뜻이 모두 나옵니다.</p>' +
-      '<div class="row" id="ey">' + years.map(function (y) { return '<button class="chip' + (y === examYear ? " on" : "") + '" data-y="' + y + '">' + y + "학년도</button>"; }).join("") +
-      '</div><div class="score" id="es"></div><div class="grid" id="eg" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))"></div>';
+      '<div><div class="eyebrow">기출 재현 · 1~8번</div><h2>원문 문장으로 어휘 문제 풀기</h2></div>' +
+      '<p class="lead">시험지 원문 그대로입니다. 1~5번은 밑줄 친 표현과 뜻이 가장 가까운 보기, 6~8번은 빈칸에 알맞은 보기를 고르세요. 답을 고른 뒤에만 공식 해설과 네 보기의 뜻·동의어가 나옵니다.</p>' +
+      yearChips("ey", examYear) + '<div class="row"><span class="score" id="es"></span>' + resetRow("er") + '</div><div class="qgrid" id="eg"></div>';
+    function upd() { var s = score(examYear, 1, 8); $("#es", el).textContent = examYear + "학년도 " + s.done + "/8문항 풀이 · " + s.ok + "개 정답"; }
+    function draw() {
+      $("#eg", el).innerHTML = E[examYear].questions.slice(0, 8).map(function (q) { return qCard(examYear, q, { extra: coreExtra }); }).join("");
+      upd();
+    }
     $("#ey", el).onclick = function (e) {
       var b = e.target.closest("[data-y]"); if (!b) return;
-      examYear = +b.dataset.y;
-      el.querySelectorAll("#ey .chip").forEach(function (c) { c.classList.toggle("on", c === b); });
-      draw();
+      examYear = +b.dataset.y; el.querySelectorAll("#ey .chip").forEach(function (c) { c.classList.toggle("on", c === b); }); draw();
     };
-    function draw() {
-      var qs = D.core.filter(function (c) { return c.yr === examYear; });
-      var done = qs.filter(function (c) { return (c.yr + "-" + c.q) in state.exam; });
-      var ok = done.filter(function (c) { return state.exam[c.yr + "-" + c.q]; }).length;
-      $("#es", el).innerHTML = examYear + "학년도 " + done.length + "/" + qs.length + "문항 풀이 · " + ok + "개 정답" + (done.length ? ' · <button class="chip" id="ereset">이 연도 다시 풀기</button>' : "");
-      var r = $("#ereset", el); if (r) r.onclick = function () { qs.forEach(function (c) { delete state.exam[c.yr + "-" + c.q]; }); save(); draw(); };
-      $("#eg", el).innerHTML = qs.map(function (c) {
-        var id = c.yr + "-" + c.q, solved = id in state.exam;
-        return '<div class="panel" data-id="' + id + '" style="display:flex;flex-direction:column;gap:10px">' +
-          '<div class="row" style="justify-content:space-between"><b class="num">' + c.q + '번</b><span class="tag">' + esc(c.t) + "</span></div>" +
-          (c.t === "동의어" ? '<div><small style="color:var(--muted)">밑줄 친 표현과 뜻이 가장 가까운 것은?</small><div class="q-target row"><span style="text-decoration:underline;text-underline-offset:6px;text-decoration-color:var(--omr)">' + esc(c.tw) + "</span>" + spk(c.tw) + "</div></div>"
-            : '<div><small style="color:var(--muted)">빈칸에 들어간 단어의 뜻이 다음과 같을 때, 알맞은 보기는?</small><div class="fm" style="font-size:1.35rem;margin-top:4px">' + esc(c.m) + "</div>" +
-              (c.h ? '<small style="color:var(--muted)">지문 단서: ' + esc(c.h) + "</small>" : "") + "</div>") +
-          '<div class="opts">' + c.o.map(function (o) {
-            var cls = solved && o.ok ? " correct" : "";
-            return '<button class="opt' + cls + '" data-no="' + o.no + '"' + (solved ? " disabled" : "") + '><span class="bubble">' + CIRC[o.no] + '</span><span><span class="ow">' + esc(o.w) + "</span>" + spk(o.w, true) + '<br><span class="om"' + (solved ? "" : " hidden") + ">" + esc(o.m) + (o.s ? '<br><span class="osyn">동의어 ' + esc(o.s) + "</span>" : "") + "</span></span></button>";
-          }).join("") + "</div>" +
-          '<div class="explain"' + (solved ? "" : " hidden") + "><p><b>" + esc(c.tw) + (c.t === "동의어" ? " = " + esc(c.a) : "") + "</b> · " + esc(c.m) + "</p>" +
-          (c.h && c.t === "동의어" ? "<p style=\"color:var(--muted);font-size:.88rem\">단서: " + esc(c.h) + "</p>" : "") +
-          (c.s ? '<p class="syn"><b>동의어</b> ' + esc(c.s) + "</p>" : "") +
-          (c.re ? "<p style=\"color:var(--omr);font-size:.88rem\">재출제: " + esc(c.re) + "</p>" : "") + "</div></div>";
-      }).join("");
-    }
-    $("#eg", el).onclick = function (e) {
-      var b = e.target.closest(".opt"); if (!b || b.disabled) return;
-      var card = b.closest("[data-id]"), id = card.dataset.id;
-      var c = D.core.filter(function (x) { return x.yr + "-" + x.q === id; })[0];
-      var picked = +b.dataset.no, ok = c.o.some(function (o) { return o.no === picked && o.ok; });
-      state.exam[id] = ok;
-      if (!ok) { var t = c.o.filter(function (o) { return o.ok; })[0]; markWrong(c.tw.toLowerCase()); if (t) markWrong(t.w.toLowerCase()); }
-      save();
-      card.querySelectorAll(".opt").forEach(function (o) {
-        o.disabled = true; o.querySelector(".om").hidden = false;
-        if (c.o.some(function (x) { return x.no === +o.dataset.no && x.ok; })) o.classList.add("correct");
-      });
-      if (!ok) b.classList.add("wrong");
-      card.querySelector(".explain").hidden = false;
-      var qs = D.core.filter(function (x) { return x.yr === examYear; });
-      var done = qs.filter(function (x) { return (x.yr + "-" + x.q) in state.exam; });
-      $("#es", el).textContent = examYear + "학년도 " + done.length + "/" + qs.length + "문항 풀이 · " + done.filter(function (x) { return state.exam[x.yr + "-" + x.q]; }).length + "개 정답";
-    };
+    bindReset(el, "er", function () { for (var n = 1; n <= 8; n++) delete state.ans[examYear + "-" + n]; save(); draw(); $("#er [data-confirm]", el).hidden = true; });
+    bindQ($("#eg", el), { extra: coreExtra }, upd);
     draw();
   };
 
   /* ---------- 문맥 빈칸 17~25 ---------- */
+  var ctxYear = 2026;
   views.context = function (el) {
-    var yr = "all";
+    var reveal = false;
     el.innerHTML =
-      '<div><div class="eyebrow">17~25번 · 문맥·논리 빈칸</div><h2>정답 표현과 판단 근거</h2></div>' +
-      '<p class="lead">2024~2026학년도 27문항입니다. 근거를 먼저 읽고 어떤 표현이 들어갈지 떠올린 뒤, 카드를 눌러 정답을 확인하세요.</p>' +
-      '<div class="row" id="xy">' + ["all"].concat(YEARS3).map(function (y) { return '<button class="chip' + (y === yr ? " on" : "") + '" data-y="' + y + '">' + (y === "all" ? "전체" : y + "학년도") + "</button>"; }).join("") +
-      '<button class="btn" id="xa">정답 모두 보기</button></div><div class="grid" id="xg"></div>';
+      '<div><div class="eyebrow">17~25번 · 문맥·논리 빈칸</div><h2>지문 속 빈칸 채우기</h2></div>' +
+      '<p class="lead">시험지 원문 지문입니다. 빈칸 앞뒤의 연결어와 논리를 보고 답을 고르면 공식 해설이 나옵니다.</p>' +
+      yearChips("xy", ctxYear) + '<div class="row"><span class="score" id="xs"></span><button class="btn" id="xa">정답 모두 보기</button>' + resetRow("xr") + '</div><div class="qgrid wide" id="xg"></div>';
+    function upd() { var s = score(ctxYear, 17, 25); $("#xs", el).textContent = ctxYear + "학년도 " + s.done + "/9문항 풀이 · " + s.ok + "개 정답"; }
     function draw() {
-      $("#xg", el).innerHTML = D.ctx.filter(function (c) { return yr === "all" || c.yr === +yr; }).map(function (c) {
-        return '<button class="panel ctx" style="text-align:left">' +
-          '<div class="row" style="justify-content:space-between"><b class="num">' + c.yr + " · " + c.q + '번</b><span class="tag plain">' + esc(c.tip) + "</span></div>" +
-          "<div><small>판단 근거</small><div>" + esc(c.why) + "</div></div>" +
-          '<div class="reveal" hidden><small>정답 ' + (CIRC[c.no] || c.no) + '</small><span class="ans">' + esc(c.a) + " " + spk(c.a, true) + "</span><span>" + esc(c.m) + "</span></div>" +
-          '<small class="tap">눌러서 정답 보기</small></button>';
-      }).join("");
+      $("#xg", el).innerHTML = E[ctxYear].questions.slice(16, 25).map(function (q) { return qCard(ctxYear, q, { extra: ctxExtra, reveal: reveal }); }).join("");
+      $("#xa", el).textContent = reveal ? "정답 모두 가리기" : "정답 모두 보기";
+      upd();
     }
     $("#xy", el).onclick = function (e) {
       var b = e.target.closest("[data-y]"); if (!b) return;
-      yr = b.dataset.y; el.querySelectorAll("#xy .chip").forEach(function (c) { c.classList.toggle("on", c === b); }); draw(); applyAll();
+      ctxYear = +b.dataset.y; el.querySelectorAll("#xy .chip").forEach(function (c) { c.classList.toggle("on", c === b); }); draw();
     };
-    var allShown = false;
-    function applyAll() {
-      el.querySelectorAll(".ctx").forEach(function (c) { c.querySelector(".reveal").hidden = !allShown; c.querySelector(".tap").hidden = allShown; });
-      $("#xa", el).textContent = allShown ? "정답 모두 가리기" : "정답 모두 보기";
+    $("#xa", el).onclick = function () { reveal = !reveal; draw(); };
+    bindReset(el, "xr", function () { for (var n = 17; n <= 25; n++) delete state.ans[ctxYear + "-" + n]; save(); draw(); $("#xr [data-confirm]", el).hidden = true; });
+    bindQ($("#xg", el), { extra: ctxExtra }, upd);
+    draw();
+  };
+
+  /* ---------- 실전 기출 ---------- */
+  var realYear = 2026;
+  views.real = function (el) {
+    el.innerHTML =
+      '<div><div class="eyebrow">실전 기출 · 40문항 / 60분</div><h2>연도별 시험지 그대로 풀기</h2></div>' +
+      '<p class="lead">문제지 원문과 지문을 그대로 실었습니다. 답을 고르기 전에는 정답과 해설이 보이지 않고, 고른 뒤에 공식 해설이 나옵니다. 배점은 시험지 표기를 따랐습니다(표기가 없으면 2.5점).</p>' +
+      yearChips("ry", realYear) +
+      '<div class="scorebar" id="rs"></div>' +
+      '<div class="row"><select id="rjump" aria-label="문항 이동"></select>' + resetRow("rr") + "</div>" +
+      '<div id="rb"></div>';
+    function upd() {
+      var s = score(realYear, 1, 40);
+      $("#rs", el).innerHTML = '<span><b class="num">' + s.done + "</b>/40 풀이</span><span><b class=\"num\">" + s.ok + "</b> 정답</span><span><b class=\"num\">" + s.pts + "</b>/" + s.total + " 점</span>" +
+        '<div class="bar"><i style="width:' + (s.done / 40 * 100) + '%"></i></div>';
     }
-    $("#xa", el).onclick = function () { allShown = !allShown; applyAll(); };
-    $("#xg", el).onclick = function (e) {
-      var c = e.target.closest(".ctx"); if (!c) return;
-      var r = c.querySelector(".reveal"); r.hidden = !r.hidden; c.querySelector(".tap").hidden = !r.hidden;
+    function draw() {
+      var ex = E[realYear], html = "", seenSec = {}, seenPsg = {};
+      ex.questions.forEach(function (q) {
+        if (q.sec != null && !seenSec[q.sec]) { seenSec[q.sec] = 1; html += '<h3 class="sechead">' + esc(ex.sections[q.sec]) + "</h3>"; }
+        var first = q.psg != null && !seenPsg[q.psg];
+        if (first) seenPsg[q.psg] = 1;
+        html += '<div id="q' + q.q + '">' + qCard(realYear, q, { passage: first }) + "</div>";
+      });
+      $("#rb", el).innerHTML = html;
+      $("#rjump", el).innerHTML = '<option value="">문항으로 이동</option>' + ex.questions.map(function (q) { return '<option value="' + q.q + '">' + q.q + "번 · " + qType(q.q) + "</option>"; }).join("");
+      upd();
+    }
+    $("#ry", el).onclick = function (e) {
+      var b = e.target.closest("[data-y]"); if (!b) return;
+      realYear = +b.dataset.y; el.querySelectorAll("#ry .chip").forEach(function (c) { c.classList.toggle("on", c === b); }); draw();
     };
+    $("#rjump", el).onchange = function () { var t = $("#q" + this.value, el); if (t) t.scrollIntoView({ block: "start" }); this.value = ""; };
+    bindReset(el, "rr", function () { for (var n = 1; n <= 40; n++) delete state.ans[realYear + "-" + n]; save(); draw(); $("#rr [data-confirm]", el).hidden = true; });
+    bindQ($("#rb", el), {}, upd);
     draw();
   };
 

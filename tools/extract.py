@@ -1,6 +1,6 @@
 """Excel(기출 어휘 분석) -> data/words.js 변환 스크립트.
 사용법: python3 tools/extract.py <엑셀파일> [출력경로]"""
-import sys, json, re, openpyxl
+import sys, os, json, re, openpyxl
 
 src = sys.argv[1]
 out = sys.argv[2] if len(sys.argv) > 2 else 'data/words.js'
@@ -80,21 +80,65 @@ def meaning(cands):
         if k in extra: return extra[k], 1
     return '', 1
 
-allw, seen_forms = [], set()
-for r in rows('5개년_어간전체', 4):
-    forms = [f.strip() for f in re.findall(r"([^,()]+)\(\d+\)", s(r[10]))]
-    fl = [f.lower() for f in forms]
-    seen_forms.update(fl)
-    m, x = meaning([s(r[0]).lower()] + fl)
-    allw.append(dict(w=s(r[0]), m=m, x=x, n=r[2] or 0, y=r[3] or 0, c=[r[4] or 0, r[5] or 0, r[6] or 0, r[7] or 0, r[8] or 0],
-                     q=s(r[9]), f=', '.join(forms)))
-for r in freq:
-    w = s(r[0])
-    if w.lower() in seen_forms: continue
-    m, x = meaning([w.lower()])
-    qs = ', '.join(f'{y}:{s(r[6 + i])}' for i, y in enumerate((2024, 2025, 2026)) if r[6 + i])
-    allw.append(dict(w=w, m=m, x=x, n=r[1] or 0, y=r[2] or 0, c=[None, None, r[3] or 0, r[4] or 0, r[5] or 0], q=qs, f=w))
-allw.sort(key=lambda d: (-d['n'], d['w']))
+# 원문(data/exam.js)을 표제어 단위로 다시 센다. 엑셀 어간 묶음은 다른 단어가 섞여 쓰지 않는다.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from recount import load_exam, count
+from regroup import lemma as lemma_of
+from wordfreq import zipf_frequency
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+EX = load_exam(os.path.join(ROOT, 'data', 'exam.js'))
+LEM = count(EX)
+
+def lem_phrase(t):
+    w = re.findall(r"[A-Za-z][A-Za-z'’-]*", t)
+    return lemma_of(w[0]) if w else ''
+
+# 직접 출제: 1~8번 표적어·정답·보기, 17~25번 한 단어 정답. 여러 단어 표현은 구 그대로 따로 둔다.
+direct, phrases = {}, {}
+def mark(text, tag, m, yr, q):
+    if len(text.split()) > 1:
+        phrases.setdefault(text.lower(), dict(w=text, tag=tag, m=m, c={}, q={}))
+        ph = phrases[text.lower()]; ph['c'][yr] = 1; ph['q'].setdefault(yr, set()).add(q)
+    else:
+        direct.setdefault(lem_phrase(text), tag)
+for c in core:
+    mark(c['tw'], '표적어' if c['t'] == '동의어' else '빈칸 정답', c['m'], c['yr'], c['q'])
+    if c['a'] != c['tw']: mark(c['a'], '정답', c['m'], c['yr'], c['q'])
+for c in core:
+    for o in c['o']: mark(o['w'], '보기', o['m'], c['yr'], c['q'])
+for y, ex in EX.items():
+    for q in ex['questions']:
+        if 17 <= q['q'] <= 25 and q['a'] and all(len(o.split()) == 1 for o in q['opts']):
+            direct.setdefault(lem_phrase(q['opts'][q['a'] - 1]), '17~25 정답')
+
+# 문제 지시문에 반복되는 단어(지문 어휘가 아님)
+TEMPLATE = set('passage blank sentence paragraph underline suitable appropriate choose title statement following question answer complete best fill closest grammatically incorrect order position'.split())
+PROPER = re.compile(r'^\((인명|지명|고유명사|인명/지명|지명/인명)\)')
+YEARS = [2022, 2023, 2024, 2025, 2026]
+allw = []
+for L, e in LEM.items():
+    forms = sorted(e['f'].items(), key=lambda kv: -kv[1])
+    fl = [f for f, _ in forms]
+    m, x = meaning([L] + fl)
+    n = sum(e['c'].values()); yc = len(e['c'])
+    z = zipf_frequency(L, 'en')
+    if PROPER.match(m): t = '고유명사'
+    elif z >= 5.0 or L in TEMPLATE: t = '기본'
+    elif L in direct: t = '직접 출제'
+    elif yc >= 2: t = '반복 학술'
+    elif z < 3.6: t = '심화'
+    else: t = '일반'
+    allw.append(dict(w=L, m=m, x=x, n=n, y=yc, c=[e['c'].get(y, 0) for y in YEARS],
+                     q=', '.join(f"{y}:" + ','.join(map(str, sorted(e['q'][y]))) for y in YEARS if y in e['q']),
+                     f=', '.join(fl), fc=', '.join(f'{f}({k})' for f, k in forms), t=t, tg=direct.get(L, ''), z=round(z, 1)))
+for k, ph in phrases.items():
+    allw.append(dict(w=ph['w'], m=ph['m'], x=0, n=1, y=len(ph['c']), c=[ph['c'].get(y, 0) for y in YEARS],
+                     q=', '.join(f"{y}:" + ','.join(map(str, sorted(ph['q'][y]))) for y in YEARS if y in ph['q']),
+                     f=ph['w'].lower(), fc=ph['w'].lower() + '(1)', t='직접 출제', tg=ph['tag'], z=0))
+TIER = ['직접 출제', '반복 학술', '심화', '일반', '기본', '고유명사']
+allw.sort(key=lambda d: (TIER.index(d['t']), -d['y'], -d['n'], d['w']))
+from collections import Counter
+print('등급', Counter(d['t'] for d in allw))
 
 # ---- 동의어: 기출 1~5번 정답 쌍 + data/synonyms/*.tsv ----
 syn = {}
