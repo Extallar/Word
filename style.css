@@ -258,3 +258,13 @@ b.mk { color: var(--omr); font-family: var(--f-num); font-weight: 600; margin-ri
 .todaycta small { display: block; color: var(--muted); }
 .btn small { opacity: .6; font-family: var(--f-num); margin-left: 2px; }
 #ts { scroll-margin-top: calc(var(--hdr, 92px) + 8px); }
+.ddp { display: flex; flex-direction: column; gap: 10px; }
+.ddp > small, .ddp small { color: var(--muted); }
+.ddp p { margin: 0; }
+.dd { font-family: var(--f-num); font-size: 1.8rem; color: var(--omr); letter-spacing: -.02em; }
+.ddgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ddgrid > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ddgrid b { font-size: 1.3rem; }
+.tag.good { background: var(--good-soft); color: var(--good); }
+.cfg input[type="date"] { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 10px; }
+@media (max-width: 420px) { .ddgrid { grid-template-columns: 1fr 1fr; } }

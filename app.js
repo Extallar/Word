@@ -216,7 +216,7 @@
     el.innerHTML =
       '<div><div class="eyebrow">한국공학대학교 편입영어 · 2022–2026 기출</div><h2>기출 단어로 공부하기</h2></div>' +
       '<p class="lead">5개년 시험지 200문항의 원문에서 뽑은 단어 ' + D.all.length.toLocaleString() + '개를 5개년 기준 등급으로 나눴습니다. 직접 출제 어휘와 반복 학술 어휘부터 외우고, 실전 기출로 원문 그대로 풀어 보세요.</p>' +
-      '<a class="panel todaycta" href="#today"><div><b>오늘의 루틴</b><small>복습 ' + dueList().length + '개 · 새 단어 ' + newLeft() + '개 남음 · 연속 ' + streak() + '일</small></div><span class="btn primary">시작 →</span></a>' +
+      '<a class="panel todaycta" href="#today"><div><b>오늘의 루틴' + (plan() && plan().dd >= 0 ? ' <span class="tag num">D-' + plan().dd + "</span>" : "") + '</b><small>복습 ' + dueList().length + '개 · 새 단어 ' + newLeftCapped() + '개 남음 · 연속 ' + streak() + '일</small></div><span class="btn primary">시작 →</span></a>' +
       '<div class="stats">' +
         '<div class="stat"><small>외운 단어 (기본어 제외)</small><b>' + known + '<small> / ' + total + '</small></b><div class="bar"><i style="width:' + pct + '%"></i></div></div>' +
         '<div class="stat"><small>실전 기출</small><b>' + ok + '<small> / ' + done + ' 정답</small></b><small>5개년 200문항 중 ' + done + "문항 풀이</small></div>" +
@@ -572,7 +572,25 @@
   var ROUTINE_TIERS = ["직접 출제", "반복 학술", "심화", "일반"];
   state.srs = state.srs || {};
   state.days = state.days || {};
-  state.cfg = Object.assign({ daily: 30, tiers: ["직접 출제", "반복 학술", "심화"] }, state.cfg || {});
+  state.cfg = Object.assign({ daily: 30, tiers: ["직접 출제", "반복 학술", "심화"], exam: "2027-01-15", scope: 3 }, state.cfg || {});
+  var SCOPES = { 2: ["직접 출제", "반복 학술"], 3: ["직접 출제", "반복 학술", "심화"], 4: ["직접 출제", "반복 학술", "심화", "일반"] };
+  var REVIEW_DAYS = 14; // 시험 전 이 기간은 새 단어 없이 복습만
+  function examDay() { var p = (state.cfg.exam || "").split("-").map(Number); return p.length === 3 && p[0] ? dayNo(new Date(p[0], p[1] - 1, p[2])) : null; }
+  function dateOf(n) { var d = new Date(); d.setDate(d.getDate() + (n - dayNo())); return d; }
+  function md(n) { var d = dateOf(n); return (d.getMonth() + 1) + "/" + d.getDate(); }
+  // 시험일까지 계획: 목표 범위에서 남은 단어, 마감일, 필요한 하루 개수, 지금 속도로 끝나는 날
+  function plan() {
+    var ex = examDay(); if (ex == null) return null;
+    var t = dayNo(), scope = SCOPES[state.cfg.scope] || SCOPES[3];
+    var remain = D.all.filter(function (a) { var k = a.w.toLowerCase(); return scope.indexOf(a.t) >= 0 && !state.srs[k] && !state.known[k]; }).length;
+    var cutoff = ex - REVIEW_DAYS;
+    var todayLeft = newLeft();
+    var daysLeft = Math.max(0, cutoff - t + (todayLeft > 0 ? 1 : 0)); // 오늘 몫이 남았으면 오늘 포함
+    var need = daysLeft ? Math.ceil(remain / daysLeft) : remain;
+    var afterToday = Math.max(0, remain - todayLeft);
+    var finish = remain === 0 ? t : (todayLeft >= remain ? t : t + Math.ceil(afterToday / state.cfg.daily));
+    return { ex: ex, dd: ex - t, cutoff: cutoff, remain: remain, need: need, finish: finish, ok: finish <= cutoff, past: t > cutoff, scope: scope };
+  }
   function dayNo(d) { d = d || new Date(); return Math.floor((d.getTime() - d.getTimezoneOffset() * 60000) / 86400000); }
   function dayLog(t) { t = t == null ? dayNo() : t; return state.days[t] || (state.days[t] = { rev: 0, nw: 0, quiz: 0, ok: 0, words: [] }); }
   function logWord(k) { var L = dayLog(); if (L.words.indexOf(k) < 0) L.words.push(k); }
@@ -598,6 +616,7 @@
     return out;
   }
   function newLeft() { return Math.max(0, state.cfg.daily - dayLog().nw); }
+  function newLeftCapped() { var p = plan(); return p && p.past ? 0 : newLeft(); }
   // 답 처리: again 0 / hard 1 / good 2
   function grade(k, g, isNew) {
     var t = dayNo(), first = !state.srs[k], s = state.srs[k] || { b: 0, due: t };
@@ -623,6 +642,7 @@
     var session = null;
     function render() {
       var due = dueList(), L = dayLog(), left = newLeft(), st = streak();
+      var P = plan(); if (P && P.past) left = 0;
       var reviewDone = due.length === 0, newDone = left === 0 || newList(1).length === 0;
       var todayWords = L.words.length, quizDone = L.quiz >= Math.min(10, todayWords) && todayWords > 0;
       var t = dayNo(), forecast = [];
@@ -632,6 +652,7 @@
       var inSrs = Object.keys(state.srs).length, mastered = Object.keys(state.srs).filter(function (k) { return state.srs[k].b >= 4; }).length;
       el.innerHTML =
         '<div><div class="eyebrow">' + new Date().toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "long" }) + '</div><h2>오늘의 루틴</h2></div>' +
+        dday(P) +
         '<div class="stats">' +
           '<div class="stat"><small>연속 학습</small><b>' + st + '<small>일</small></b><small>' + (L.rev + L.nw + L.quiz ? "오늘 공부함" : "오늘 아직 시작 전") + "</small></div>" +
           '<div class="stat"><small>복습 대기</small><b>' + due.length + '</b><small>오늘 복습 ' + L.rev + "개 완료</small></div>" +
@@ -640,7 +661,7 @@
         "</div>" +
         '<div class="panel routine">' +
           step(1, "복습 카드", reviewDone ? (L.rev ? "완료 · " + L.rev + "개 복습" : "오늘 복습할 단어 없음") : due.length + "개 남음 · 1·3·7·14·30일 간격으로 다시 나오는 단어", reviewDone, reviewDone ? "" : '<button class="btn primary" data-go="review">시작</button>') +
-          step(2, "새 단어", newDone ? "완료 · " + L.nw + "개" : left + "개 남음 · " + state.cfg.tiers.join(" → ") + " 순서", newDone, newDone ? (newList(1).length ? '<button class="btn" data-go="more">10개 더</button>' : "") : '<button class="btn primary" data-go="new">시작</button>') +
+          step(2, "새 단어", P && P.past ? "시험 " + REVIEW_DAYS + "일 전부터는 복습 기간 · 새 단어 없이 복습과 실전 기출 위주" : newDone ? "완료 · " + L.nw + "개" : left + "개 남음 · " + state.cfg.tiers.join(" → ") + " 순서", newDone, newDone ? (newList(1).length ? '<button class="btn" data-go="more">10개 더</button>' : "") : '<button class="btn primary" data-go="new">시작</button>') +
           step(3, "오늘 단어 퀴즈", todayWords ? (quizDone ? "완료 · " + L.ok + "/" + L.quiz + " 정답" : "오늘 본 단어 " + todayWords + "개로 4지선다") : "복습이나 새 단어를 먼저 해 주세요", quizDone, todayWords ? '<button class="btn' + (quizDone ? "" : " primary") + '" data-go="quiz">' + (quizDone ? "한 번 더" : "시작") + "</button>" : "") +
           step(4, weekend ? "주말 실전 기출" : "실전 기출 (주말 추천)", "한 해 40문항을 풀고, 지문에서 막힌 단어는 단어장 별표를 꺼서 복습 대상으로", false, '<a class="btn" href="#real">열기</a>') +
         "</div>" +
@@ -650,19 +671,37 @@
           return '<div class="fcd"><span class="fcb" style="height:' + Math.round(n / fmax * 60) + 'px"></span><b class="num">' + n + "</b><small>" + ["일", "월", "화", "수", "목", "금", "토"][d.getDay()] + "</small></div>";
         }).join("") + "</div></div>" +
         '<details class="panel"><summary><b>루틴 설정</b></summary><div class="cfg">' +
-          '<label>하루 새 단어 <select id="tdaily">' + [10, 20, 30, 40, 50].map(function (n) { return '<option' + (n === state.cfg.daily ? " selected" : "") + ">" + n + "</option>"; }).join("") + "</select>개</label>" +
+          '<label>시험 날짜 <input type="date" id="texam" value="' + esc(state.cfg.exam || "") + '"></label>' +
+          '<label>목표 범위 <select id="tscope">' + [[2, "직접 출제 + 반복 학술"], [3, "+ 심화"], [4, "+ 일반"]].map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === state.cfg.scope ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select></label>" +
+          '<label>하루 새 단어 <select id="tdaily">' + [10, 15, 20, 25, 30, 35, 40, 50, 60, 80].concat(state.cfg.daily).filter(function (v, i, a) { return a.indexOf(v) === i; }).sort(function (a, b) { return a - b; }).map(function (n) { return '<option' + (n === state.cfg.daily ? " selected" : "") + ">" + n + "</option>"; }).join("") + "</select>개</label>" +
           '<div class="row">' + ROUTINE_TIERS.map(function (t) { return '<label class="chk"><input type="checkbox" data-tier="' + t + '"' + (state.cfg.tiers.indexOf(t) >= 0 ? " checked" : "") + "> " + t + "</label>"; }).join("") + "</div>" +
           '<p class="lead" style="font-size:.82rem">새 단어는 체크한 등급에서 단어장 순서(여러 해 나온 단어 먼저)대로 나옵니다. 별표로 외운 단어는 건너뜁니다.</p>' +
           '<div class="row"><button class="btn" id="treset">복습 기록 초기화</button><span id="tconfirm" hidden><button class="btn bad" id="tyes">정말 지우기</button> <button class="btn" id="tno">취소</button></span></div>' +
         "</div></details>";
       if (session) drawSession();
     }
+    function dday(P) {
+      if (!P) return '<div class="panel ddp"><b>시험일을 정해 주세요</b><small>아래 루틴 설정에서 시험 날짜를 넣으면 D-day와 하루 권장 개수를 계산합니다.</small></div>';
+      var status;
+      if (P.dd < 0) status = '<span class="tag plain">시험이 끝났습니다</span>';
+      else if (P.past) status = '<span class="tag good">복습 기간</span> 새 단어는 멈추고 복습·오답노트·실전 기출에 집중하세요.';
+      else if (P.remain === 0) status = '<span class="tag good">목표 범위 완료</span> 남은 기간은 복습과 실전 기출, 여유가 있으면 범위를 넓혀 보세요.';
+      else if (P.ok) status = '<span class="tag good">일정 안</span> 지금 속도(하루 ' + state.cfg.daily + "개)면 " + md(P.finish) + "에 끝나 " + (P.cutoff === P.finish ? "새 단어 마감일에 딱 맞습니다." : "마감 " + md(P.cutoff) + "보다 " + (P.cutoff - P.finish) + "일 여유가 있습니다.");
+      else status = '<span class="tag">늦어짐</span> 지금 속도(하루 ' + state.cfg.daily + "개)면 " + md(P.finish) + "에 끝나 마감 " + md(P.cutoff) + "보다 " + (P.finish - P.cutoff) + "일 늦습니다." +
+        (P.need <= 80 ? ' <button class="btn primary" data-daily="' + P.need + '">하루 ' + P.need + "개로 바꾸기</button>" : " 범위를 줄이는 것도 방법입니다.");
+      return '<div class="panel ddp"><div class="row" style="justify-content:space-between;align-items:baseline"><b class="dd num">' + (P.dd > 0 ? "D-" + P.dd : P.dd === 0 ? "D-DAY" : "D+" + (-P.dd)) + "</b>" +
+        "<small>시험 " + md(P.ex) + " · 새 단어 마감 " + md(P.cutoff) + "</small></div>" +
+        '<div class="ddgrid"><div><small>목표 범위 남은 단어</small><b class="num">' + P.remain + "</b><small>" + P.scope.join("·") + "</small></div>" +
+        "<div><small>마감까지 하루 권장</small><b class=\"num\">" + (P.past ? 0 : P.need) + "</b><small>개</small></div>" +
+        "<div><small>지금 속도로 끝나는 날</small><b class=\"num\">" + (P.remain ? md(P.finish) : "완료") + "</b><small>하루 " + state.cfg.daily + "개 기준</small></div></div>" +
+        "<p>" + status + "</p></div>";
+    }
     function step(n, title, desc, done, action) {
       return '<div class="rstep' + (done ? " done" : "") + '"><span class="rnum">' + (done ? "✓" : n) + '</span><div style="min-width:0"><b>' + title + "</b><small>" + desc + "</small></div><div>" + action + "</div></div>";
     }
     function start(kind) {
       if (kind === "review") session = { kind: kind, q: dueList(), i: 0, flip: false };
-      else if (kind === "new" || kind === "more") { session = { kind: "new", q: newList(kind === "more" ? 10 : newLeft()), i: 0, flip: false }; }
+      else if (kind === "new" || kind === "more") { session = { kind: "new", q: newList(kind === "more" ? 10 : newLeftCapped()), i: 0, flip: false }; }
       else if (kind === "quiz") session = { kind: kind, q: shuffle(dayLog().words.filter(function (k) { return BYW[k]; })).slice(0, 20), i: 0, picked: null };
       render();
       var ts = $("#ts", el); if (ts) ts.scrollIntoView({ block: "start" });
@@ -742,6 +781,8 @@
     };
     el.addEventListener("change", function (e) {
       if (e.target.id === "tdaily") { state.cfg.daily = +e.target.value; save(); render(); }
+      if (e.target.id === "texam") { state.cfg.exam = e.target.value; save(); render(); }
+      if (e.target.id === "tscope") { state.cfg.scope = +e.target.value; save(); render(); }
       if (e.target.dataset && e.target.dataset.tier) {
         var t = e.target.dataset.tier, arr = state.cfg.tiers.filter(function (x) { return x !== t; });
         if (e.target.checked) arr.push(t);
@@ -751,6 +792,8 @@
       }
     });
     el.addEventListener("click", function (e) {
+      var dl = e.target.closest && e.target.closest("[data-daily]");
+      if (dl) { state.cfg.daily = +dl.dataset.daily; save(); render(); return; }
       if (e.target.id === "treset") $("#tconfirm", el).hidden = false;
       if (e.target.id === "tno") $("#tconfirm", el).hidden = true;
       if (e.target.id === "tyes") { state.srs = {}; state.days = {}; save(); session = null; render(); }
