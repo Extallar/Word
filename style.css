@@ -185,3 +185,13 @@ details.meta { overflow-wrap: anywhere; }
 .syn b { font-family: var(--f-body); font-size: .72rem; font-weight: 600; color: var(--omr); margin-right: 4px; letter-spacing: .02em; }
 .hide-m .witem .syn { visibility: hidden; }
 .hide-m .witem .m.peek + .syn { visibility: visible; }
+.spk {
+  display: inline-grid; place-items: center; width: 28px; height: 28px; flex: none;
+  border: 1px solid var(--line); border-radius: 50%; background: var(--surface); color: var(--muted);
+  cursor: pointer; vertical-align: middle; margin-left: 6px; padding: 0;
+}
+.spk:hover { color: var(--omr); border-color: var(--omr); }
+.q-target.row { gap: 4px; }
+.q-target .spk { width: 32px; height: 32px; }
+.osyn { font-family: var(--f-word); color: var(--ink); opacity: .8; font-size: .85rem; }
+#csay svg { vertical-align: -2px; }

@@ -18,6 +18,20 @@
     try { var u = new SpeechSynthesisUtterance(word); u.lang = "en-US"; u.rate = 0.9; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch (e) {}
   }
   var canSpeak = typeof window.speechSynthesis !== "undefined";
+  var SPK = '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M3 9v6h4l5 4V5L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z"/></svg>';
+  // 발음 버튼. 다른 버튼 안에 들어갈 때는 span으로 만든다.
+  function spk(word, inline) {
+    if (!canSpeak || !word) return "";
+    var tag = inline ? "span" : "button";
+    return "<" + tag + ' class="spk" data-say="' + esc(word) + '" title="발음 듣기" aria-label="' + esc(word) + ' 발음 듣기"' + (inline ? ' role="button" tabindex="0"' : ' type="button"') + ">" + SPK + "</" + tag + ">";
+  }
+  document.addEventListener("click", function (e) {
+    var sp = e.target.closest && e.target.closest("[data-say]");
+    if (sp) { e.preventDefault(); e.stopPropagation(); say(sp.dataset.say); }
+  }, true);
+  document.addEventListener("keydown", function (e) {
+    if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches("span[data-say]")) { e.preventDefault(); e.stopPropagation(); say(e.target.dataset.say); }
+  }, true);
 
   /* ---------- 단어 풀 ---------- */
   var pools = {};
@@ -197,7 +211,7 @@
     function row(k, w, m, syn, meta, side, qnums) {
       return '<div class="witem"><button class="star' + (state.known[k] ? " on" : "") + '" data-k="' + esc(k) + '" aria-label="외운 단어 표시">★</button>' +
         '<div style="min-width:0"><div class="row" style="gap:8px"><span class="w">' + esc(w) + "</span>" +
-        (canSpeak ? '<button class="say" data-say="' + esc(w) + '">발음</button>' : "") + "</div>" +
+        spk(w) + "</div>" +
         '<div class="m">' + esc(m) + "</div>" + (syn ? '<div class="syn"><b>동의어</b> ' + esc(syn) + "</div>" : "") + '<div class="meta">' + meta + "</div>" +
         (qnums ? '<details class="meta"><summary>출제 문항 번호</summary>' + esc(qnums) + "</details>" : "") + "</div>" +
         '<div class="side">' + side + "</div></div>";
@@ -213,7 +227,6 @@
     $("#wl", el).onclick = function (e) {
       var s = e.target.closest(".star");
       if (s) { var k = s.dataset.k; if (state.known[k]) delete state.known[k]; else state.known[k] = 1; save(); s.classList.toggle("on"); return; }
-      var sp = e.target.closest("[data-say]"); if (sp) { say(sp.dataset.say); return; }
       var m = e.target.closest(".m"); if (m) m.classList.toggle("peek");
     };
     setMode(wordMode);
@@ -229,7 +242,7 @@
       '<select id="cf"><option value="en">영어 → 뜻</option><option value="ko">뜻 → 영어</option></select>' +
       '<button class="btn" id="cs">섞기</button></div>' +
       '<div class="card-stage"><div class="counter" id="cn"></div><div class="flash" id="fc" tabindex="0" role="button" aria-label="카드 뒤집기"></div>' +
-      '<div class="row" style="justify-content:center"><button class="btn bad" id="cno">몰라요</button><button class="btn good" id="cyes">알아요</button></div>' +
+      '<div class="row" style="justify-content:center"><button class="btn" id="csay">' + SPK + ' 발음</button><button class="btn bad" id="cno">몰라요</button><button class="btn good" id="cyes">알아요</button></div>' +
       '<div class="row" style="justify-content:center"><button class="btn" id="cprev">← 이전</button><button class="btn" id="cnext">다음 →</button></div>' +
       '<p class="lead" style="font-size:.8rem;text-align:center">키보드: Space 뒤집기 · ← → 이동 · 1 몰라요 · 2 알아요</p></div>';
     function load(shuf) {
@@ -261,6 +274,8 @@
     $("#cprev", el).onclick = function () { move(-1); };
     $("#cnext", el).onclick = function () { move(1); };
     $("#cyes", el).onclick = function () { mark(true); };
+    $("#csay", el).onclick = function () { if (deck.length) say(deck[i].w); };
+    $("#csay", el).hidden = !canSpeak;
     $("#cno", el).onclick = function () { mark(false); };
     el._key = function (e) {
       if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT") return;
@@ -318,9 +333,9 @@
       }
       box.innerHTML = '<div class="row" style="justify-content:space-between"><span class="score">' + (n + 1) + "번째 · 정답 " + right + '</span><span class="tag plain">' + esc(cur.src) + "</span></div>" +
         (mode === "syn" ? '<small style="color:var(--muted)">다음 단어와 뜻이 가장 가까운 것은?</small>' : "") +
-        '<div style="margin:16px 0" class="' + (mode === "ko" ? "fm" : "q-target") + '">' + esc(mode === "ko" ? cur.m : cur.w) + "</div>" +
+        '<div style="margin:16px 0" class="row ' + (mode === "ko" ? "fm" : "q-target") + '">' + esc(mode === "ko" ? cur.m : cur.w) + (mode === "ko" ? "" : spk(cur.w)) + "</div>" +
         '<div class="opts">' + choices.map(function (c, idx) {
-          return '<button class="opt" data-k="' + esc(c.k) + '"><span class="bubble">' + (idx + 1) + '</span><span><span class="' + (mode === "en" ? "" : "ow") + '">' + esc(c.label) + '</span><br><span class="om reveal-m" hidden>' + esc(c.sub) + "</span></span></button>";
+          return '<button class="opt" data-k="' + esc(c.k) + '"><span class="bubble">' + (idx + 1) + '</span><span><span class="' + (mode === "en" ? "" : "ow") + '">' + esc(c.label) + "</span>" + (mode === "en" ? "" : spk(c.label, true)) + '<br><span class="om reveal-m" hidden>' + esc(c.sub) + "</span></span>" + (mode === "en" ? '<span class="reveal-m" hidden>' + spk(c.sub, true) + "</span>" : "") + "</button>";
         }).join("") + "</div>" +
         '<div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn primary" id="qn" hidden>다음 →</button></div>';
       box.querySelectorAll(".opt").forEach(function (b) { b.onclick = function () { answer(b); }; });
@@ -377,15 +392,16 @@
         var id = c.yr + "-" + c.q, solved = id in state.exam;
         return '<div class="panel" data-id="' + id + '" style="display:flex;flex-direction:column;gap:10px">' +
           '<div class="row" style="justify-content:space-between"><b class="num">' + c.q + '번</b><span class="tag">' + esc(c.t) + "</span></div>" +
-          (c.t === "동의어" ? '<div><small style="color:var(--muted)">밑줄 친 표현과 뜻이 가장 가까운 것은?</small><div class="q-target" style="text-decoration:underline;text-underline-offset:6px;text-decoration-color:var(--omr)">' + esc(c.tw) + "</div></div>"
+          (c.t === "동의어" ? '<div><small style="color:var(--muted)">밑줄 친 표현과 뜻이 가장 가까운 것은?</small><div class="q-target row"><span style="text-decoration:underline;text-underline-offset:6px;text-decoration-color:var(--omr)">' + esc(c.tw) + "</span>" + spk(c.tw) + "</div></div>"
             : '<div><small style="color:var(--muted)">빈칸에 들어간 단어의 뜻이 다음과 같을 때, 알맞은 보기는?</small><div class="fm" style="font-size:1.35rem;margin-top:4px">' + esc(c.m) + "</div>" +
               (c.h ? '<small style="color:var(--muted)">지문 단서: ' + esc(c.h) + "</small>" : "") + "</div>") +
           '<div class="opts">' + c.o.map(function (o) {
             var cls = solved && o.ok ? " correct" : "";
-            return '<button class="opt' + cls + '" data-no="' + o.no + '"' + (solved ? " disabled" : "") + '><span class="bubble">' + CIRC[o.no] + '</span><span><span class="ow">' + esc(o.w) + '</span><br><span class="om"' + (solved ? "" : " hidden") + ">" + esc(o.m) + "</span></span></button>";
+            return '<button class="opt' + cls + '" data-no="' + o.no + '"' + (solved ? " disabled" : "") + '><span class="bubble">' + CIRC[o.no] + '</span><span><span class="ow">' + esc(o.w) + "</span>" + spk(o.w, true) + '<br><span class="om"' + (solved ? "" : " hidden") + ">" + esc(o.m) + (o.s ? '<br><span class="osyn">동의어 ' + esc(o.s) + "</span>" : "") + "</span></span></button>";
           }).join("") + "</div>" +
           '<div class="explain"' + (solved ? "" : " hidden") + "><p><b>" + esc(c.tw) + (c.t === "동의어" ? " = " + esc(c.a) : "") + "</b> · " + esc(c.m) + "</p>" +
           (c.h && c.t === "동의어" ? "<p style=\"color:var(--muted);font-size:.88rem\">단서: " + esc(c.h) + "</p>" : "") +
+          (c.s ? '<p class="syn"><b>동의어</b> ' + esc(c.s) + "</p>" : "") +
           (c.re ? "<p style=\"color:var(--omr);font-size:.88rem\">재출제: " + esc(c.re) + "</p>" : "") + "</div></div>";
       }).join("");
     }
@@ -423,7 +439,7 @@
         return '<button class="panel ctx" style="text-align:left">' +
           '<div class="row" style="justify-content:space-between"><b class="num">' + c.yr + " · " + c.q + '번</b><span class="tag plain">' + esc(c.tip) + "</span></div>" +
           "<div><small>판단 근거</small><div>" + esc(c.why) + "</div></div>" +
-          '<div class="reveal" hidden><small>정답 ' + (CIRC[c.no] || c.no) + '</small><span class="ans">' + esc(c.a) + "</span><span>" + esc(c.m) + "</span></div>" +
+          '<div class="reveal" hidden><small>정답 ' + (CIRC[c.no] || c.no) + '</small><span class="ans">' + esc(c.a) + " " + spk(c.a, true) + "</span><span>" + esc(c.m) + "</span></div>" +
           '<small class="tap">눌러서 정답 보기</small></button>';
       }).join("");
     }
@@ -449,7 +465,7 @@
     el.innerHTML =
       '<div><div class="eyebrow">9~16번 · 26~40번</div><h2>문법·독해 풀이법</h2></div>' +
       '<h3>문법 핵심 유형</h3><div class="grid">' + D.grammar.map(function (g) {
-        return '<div class="panel" style="display:flex;flex-direction:column;gap:6px"><b>' + esc(g.t) + '</b><span class="tag plain" style="align-self:flex-start">' + esc(g.ex) + '</span><p class="tip-how">' + esc(g.how) + '</p><p class="tip-eg">' + esc(g.eg) + "</p></div>";
+        return '<div class="panel" style="display:flex;flex-direction:column;gap:6px"><b>' + esc(g.t) + '</b><span class="tag plain" style="align-self:flex-start">' + esc(g.ex) + '</span><p class="tip-how">' + esc(g.how) + '</p><p class="tip-eg">' + esc(g.eg) + " " + spk(g.eg.replace(/\s*\/\s*/g, ". ")) + "</p></div>";
       }).join("") + "</div>" +
       '<h3>독해 문항별 접근법</h3><div class="grid">' + D.reading.map(function (r) {
         return '<div class="panel" style="display:flex;flex-direction:column;gap:6px"><b>' + esc(r.t) + '</b><span class="tag plain" style="align-self:flex-start">' + esc(r.ex) + '</span><p class="tip-how">' + esc(r.how) + "</p></div>";
@@ -465,14 +481,13 @@
       '<div class="row"><a class="btn primary" href="#cards" id="rc" style="text-decoration:none">오답 카드로 복습</a><a class="btn" href="#quiz" id="rq" style="text-decoration:none">오답 퀴즈</a><button class="btn" id="rclear">오답노트 비우기</button><span id="rconfirm" hidden><button class="btn bad" id="ryes">정말 비우기</button> <button class="btn" id="rno">취소</button></span></div>' +
       '<div class="wlist">' + (list.length ? list.map(function (x) {
         return '<div class="witem"><span class="tag num" style="justify-self:start">' + state.wrong[x.k] + '회</span><div style="min-width:0"><span class="w">' + esc(x.w) + '</span><div class="m">' + esc(x.m) + '</div><div class="meta">' + esc(x.src) + "</div></div>" +
-          (canSpeak ? '<div class="side"><button class="say" data-say="' + esc(x.w) + '">발음</button></div>' : "<div></div>") + "</div>";
+          '<div class="side">' + spk(x.w) + "</div></div>";
       }).join("") : '<div class="empty">아직 틀린 단어가 없습니다. <a href="#quiz">퀴즈</a>를 풀어 보세요.</div>') + "</div>";
     $("#rc", el).onclick = function () { cardPool = "wrong"; };
     $("#rq", el).onclick = function () { quizPool = "wrong"; };
     $("#rclear", el).onclick = function () { $("#rconfirm", el).hidden = false; };
     $("#rno", el).onclick = function () { $("#rconfirm", el).hidden = true; };
     $("#ryes", el).onclick = function () { state.wrong = {}; save(); route(); };
-    el.onclick = function (e) { var sp = e.target.closest("[data-say]"); if (sp) say(sp.dataset.say); };
   };
 
   route();
