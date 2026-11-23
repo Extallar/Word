@@ -1,6 +1,6 @@
 """Excel(기출 어휘 분석) -> data/words.js 변환 스크립트.
 사용법: python3 tools/extract.py <엑셀파일> [출력경로]"""
-import sys, json, openpyxl
+import sys, json, re, openpyxl
 
 src = sys.argv[1]
 out = sys.argv[2] if len(sys.argv) > 2 else 'data/words.js'
@@ -11,6 +11,9 @@ def rows(name, skip):
 
 def s(v):
     return '' if v is None else str(v).strip()
+
+def clean(v):
+    return re.sub(r'\s*\d+/$', '', s(v))
 
 vocab = []
 for r in rows('우선암기_기출어휘', 4):
@@ -35,10 +38,10 @@ for r in rows('5개년_핵심40', 4):
 
 opts = {}
 for r in rows('1-8번_전체선택지', 4):
-    opts.setdefault((int(r[0]), int(r[1])), []).append(dict(no=int(r[2]), w=s(r[3]), m=s(r[4]), ok=s(r[5]) == '정답'))
+    opts.setdefault((int(r[0]), int(r[1])), []).append(dict(no=int(r[2]), w=clean(r[3]), m=s(r[4]), ok=s(r[5]) == '정답'))
 circ = {'①': 1, '②': 2, '③': 3, '④': 4}
 for r in rows('2022-23_보기64', 4):
-    opts.setdefault((int(r[0]), int(r[1])), []).append(dict(no=circ.get(s(r[3]), r[3]), w=s(r[4]), m=s(r[5]), ok=s(r[6]) == '정답'))
+    opts.setdefault((int(r[0]), int(r[1])), []).append(dict(no=circ.get(s(r[3]), r[3]), w=clean(r[4]), m=s(r[5]), ok=s(r[6]) == '정답'))
 for c in core:
     c['o'] = sorted(opts.get((c['yr'], c['q']), []), key=lambda o: o['no'])
 
@@ -72,7 +75,7 @@ for fn in sorted(glob.glob(os.path.join(mdir, '*.tsv'))):
 
 def meaning(cands):
     for k in cands:
-        if k in known: return known[k], 0
+        if known.get(k): return known[k], 0
     for k in cands:
         if k in extra: return extra[k], 1
     return '', 1
@@ -92,6 +95,40 @@ for r in freq:
     qs = ', '.join(f'{y}:{s(r[6 + i])}' for i, y in enumerate((2024, 2025, 2026)) if r[6 + i])
     allw.append(dict(w=w, m=m, x=x, n=r[1] or 0, y=r[2] or 0, c=[None, None, r[3] or 0, r[4] or 0, r[5] or 0], q=qs, f=w))
 allw.sort(key=lambda d: (-d['n'], d['w']))
+
+# ---- 동의어: 기출 1~5번 정답 쌍 + data/synonyms/*.tsv ----
+syn = {}
+sdir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'synonyms')
+for fn in sorted(glob.glob(os.path.join(sdir, '*.tsv'))):
+    for line in open(fn, encoding='utf-8'):
+        if '\t' in line:
+            k, v = line.rstrip('\n').split('\t', 1)
+            v = v.strip()
+            if v and v != '-': syn[k.lower()] = [x.strip() for x in v.split(',') if x.strip()]
+exam = {}
+for c in core:
+    if c['t'] == '동의어':
+        exam.setdefault(c['tw'].lower(), []).append(c['a'])
+        exam.setdefault(c['a'].lower(), []).append(c['tw'])
+def synonyms(cands):
+    out = []
+    for k in cands:
+        for x in exam.get(k, []):
+            if x.lower() not in [o.lower() for o in out]: out.append(x)
+    for k in cands:
+        if k in syn:
+            for x in syn[k]:
+                if x.lower() not in [o.lower() for o in out] and x.lower() not in cands: out.append(x)
+            break
+    return ', '.join(out[:4])
+for d in allw:
+    d['s'] = synonyms([d['w'].lower()] + [f.strip().lower() for f in d['f'].split(',') if f.strip()])
+for v in vocab:
+    v['s'] = synonyms([v['w'].lower()] + [f.strip().lower() for f in v['f'].split(',') if f.strip()])
+for c in core:
+    c['s'] = synonyms([c['tw'].lower()])
+    for o in c['o']: o['s'] = synonyms([o['w'].lower()])
+print('동의어 있음: 전체', sum(1 for d in allw if d['s']), '/', len(allw), ' 우선', sum(1 for v in vocab if v['s']), '/', len(vocab))
 print('전체 단어', len(allw), '뜻 없음', sum(1 for d in allw if not d['m']), '보충 뜻', sum(d['x'] for d in allw))
 
 data = dict(all=allw, vocab=vocab, repeat=repeat, core=core, ctx=ctx, grammar=grammar, reading=reading)

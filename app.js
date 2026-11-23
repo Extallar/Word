@@ -21,13 +21,13 @@
 
   /* ---------- 단어 풀 ---------- */
   var pools = {};
-  function add(pool, w, m, src) {
+  function add(pool, w, m, src, syn) {
     if (!w || !m) return;
     var k = w.toLowerCase();
     pool._idx = pool._idx || {};
     if (pool._idx[k]) return;
     pool._idx[k] = 1;
-    pool.push({ k: k, w: w, m: m, src: src });
+    pool.push({ k: k, w: w, m: m, src: src, s: syn || "" });
   }
   function isProper(m) { return /^\((인명|지명|고유명사|인명\/지명|지명\/인명)\)/.test(m); }
   function yearsText(a) {
@@ -36,19 +36,19 @@
   pools.p1 = []; pools.p2 = []; pools.p3 = []; pools.core = []; pools.opts = []; pools.all = []; pools.every = []; pools.multi = [];
   D.vocab.forEach(function (v) {
     var key = v.p.indexOf("1순위") === 0 ? "p1" : v.p.indexOf("2순위") === 0 ? "p2" : "p3";
-    add(pools[key], v.w, v.m, v.p);
+    add(pools[key], v.w, v.m, v.p, v.s);
   });
   D.core.forEach(function (c) {
-    add(pools.core, c.tw, c.m, c.yr + "년 " + c.q + "번 " + (c.t === "동의어" ? "표적어" : "정답"));
-    c.o.forEach(function (o) { add(pools.opts, o.w, o.m, c.yr + "년 " + c.q + "번 보기"); });
+    add(pools.core, c.tw, c.m, c.yr + "년 " + c.q + "번 " + (c.t === "동의어" ? "표적어" : "정답"), c.s);
+    c.o.forEach(function (o) { add(pools.opts, o.w, o.m, c.yr + "년 " + c.q + "번 보기", o.s); });
   });
   D.all.forEach(function (a) {
     if (isProper(a.m)) return;
     var src = "기출 " + a.n + "회 · " + a.y + "개년";
-    add(pools.every, a.w, a.m, src);
-    if (a.y >= 3) add(pools.multi, a.w, a.m, src);
+    add(pools.every, a.w, a.m, src, a.s);
+    if (a.y >= 3) add(pools.multi, a.w, a.m, src, a.s);
   });
-  ["p1", "p2", "p3", "core", "opts", "every"].forEach(function (k) { pools[k].forEach(function (x) { add(pools.all, x.w, x.m, x.src); }); });
+  ["p1", "p2", "p3", "core", "opts", "every"].forEach(function (k) { pools[k].forEach(function (x) { add(pools.all, x.w, x.m, x.src, x.s); }); });
   var POOL_NAMES = {
     p1: "1순위 (직접출제·3개년 반복)", p2: "2순위 (2개년 반복)", p3: "3순위 (심화)",
     core: "5개년 1~8번 핵심 40", opts: "1~8번 보기 단어", multi: "3개년 이상 반복 단어", every: "파일 전체 단어(고유명사 제외)", wrong: "오답노트", unknown: "아직 모르는 단어"
@@ -126,7 +126,7 @@
         '<button class="chip" data-m="prio">우선 암기 ' + D.vocab.length + "개</button></div>" +
       '<p class="lead" id="wd"></p>' +
       '<div class="row" id="wf"></div><div class="row" id="wy"></div>' +
-      '<div class="row"><input type="search" id="wq" placeholder="영단어나 뜻으로 검색"><button class="btn" id="wh">뜻 가리기</button></div>' +
+      '<div class="row"><input type="search" id="wq" placeholder="영단어, 뜻, 동의어로 검색"><button class="btn" id="wh">뜻 가리기</button></div>' +
       '<div class="counter" id="wc"></div><div class="wlist" id="wl"></div>';
 
     var CATS = {
@@ -138,7 +138,7 @@
       el.querySelectorAll("#wmode .chip").forEach(function (c) { c.classList.toggle("on", c.dataset.m === m); });
       $("#wt", el).textContent = m === "all" ? "기출 전체 단어 " + D.all.length.toLocaleString() + "개" : "3개년 우선 암기 어휘 " + D.vocab.length + "개";
       $("#wd", el).textContent = m === "all"
-        ? "2022~2026학년도 문제·지문·보기에 나온 모든 단어를 출현 횟수 순으로 정리했습니다. 같은 어간의 활용형은 한 단어로 묶었습니다. '뜻 보충' 표시는 엑셀에 뜻이 없어 새로 단 뜻입니다."
+        ? "2022~2026학년도 문제·지문·보기에 나온 모든 단어를 출현 횟수 순으로 정리했습니다. 같은 어간의 활용형은 한 단어로 묶었습니다. '뜻 보충' 표시는 엑셀에 뜻이 없어 새로 단 뜻입니다. 동의어는 기출 1~5번 정답 쌍을 먼저 보여 줍니다."
         : "우선순위는 직접 출제 > 3개년 반복 > 2개년 반복 순입니다. 별표를 누르면 외운 단어로 표시됩니다.";
       $("#wf", el).innerHTML = CATS[m].map(function (c) { return '<button class="chip' + (c[0] === filter ? " on" : "") + '" data-f="' + esc(c[0]) + '">' + c[1] + "</button>"; }).join("");
       $("#wy", el).innerHTML = m === "all" ? [0, 2022, 2023, 2024, 2025, 2026].map(function (y) {
@@ -164,7 +164,7 @@
     $("#wh", el).onclick = function () { hide = !hide; this.textContent = hide ? "뜻 보이기" : "뜻 가리기"; $("#wl", el).classList.toggle("hide-m", hide); };
 
     function match(v) {
-      return !q || v.w.toLowerCase().indexOf(q) >= 0 || v.m.indexOf(q) >= 0 || (v.f && v.f.toLowerCase().indexOf(q) >= 0);
+      return !q || v.w.toLowerCase().indexOf(q) >= 0 || v.m.indexOf(q) >= 0 || (v.f && v.f.toLowerCase().indexOf(q) >= 0) || (v.s && v.s.toLowerCase().indexOf(q) >= 0);
     }
     function listPrio() {
       return D.vocab.filter(function (v) {
@@ -185,20 +185,20 @@
     function itemPrio(v) {
       var k = v.w.toLowerCase();
       var yrs = YEARS3.map(function (y, i) { return v.c[i] ? y + "(" + v.q[i] + "번)" : ""; }).filter(Boolean).join(" · ");
-      return row(k, v.w, v.m, esc(yrs) + (v.f && v.f !== v.w ? " · 어형: " + esc(v.f) : ""),
+      return row(k, v.w, v.m, v.s, esc(yrs) + (v.f && v.f !== v.w ? " · 어형: " + esc(v.f) : ""),
         '<span class="tag' + (v.p.indexOf("3순위") === 0 ? " plain" : "") + '">' + esc(v.p.split(" · ")[1] || v.p) + '</span> <span class="meta num">' + v.n + "회</span>");
     }
     function itemAll(v) {
       var k = v.w.toLowerCase();
       var forms = v.f && v.f.toLowerCase() !== k ? " · 어형: " + esc(v.f) : "";
-      return row(k, v.w, v.m, esc(yearsText(v)) + forms + (v.x ? ' · <span style="color:var(--omr)">뜻 보충</span>' : ""),
+      return row(k, v.w, v.m, v.s, esc(yearsText(v)) + forms + (v.x ? ' · <span style="color:var(--omr)">뜻 보충</span>' : ""),
         '<span class="tag plain">' + v.y + '개년</span> <span class="meta num">' + v.n + "회</span>", v.q);
     }
-    function row(k, w, m, meta, side, qnums) {
+    function row(k, w, m, syn, meta, side, qnums) {
       return '<div class="witem"><button class="star' + (state.known[k] ? " on" : "") + '" data-k="' + esc(k) + '" aria-label="외운 단어 표시">★</button>' +
         '<div style="min-width:0"><div class="row" style="gap:8px"><span class="w">' + esc(w) + "</span>" +
         (canSpeak ? '<button class="say" data-say="' + esc(w) + '">발음</button>' : "") + "</div>" +
-        '<div class="m">' + esc(m) + '</div><div class="meta">' + meta + "</div>" +
+        '<div class="m">' + esc(m) + "</div>" + (syn ? '<div class="syn"><b>동의어</b> ' + esc(syn) + "</div>" : "") + '<div class="meta">' + meta + "</div>" +
         (qnums ? '<details class="meta"><summary>출제 문항 번호</summary>' + esc(qnums) + "</details>" : "") + "</div>" +
         '<div class="side">' + side + "</div></div>";
     }
@@ -240,6 +240,7 @@
       if (!deck.length) { fc.innerHTML = '<div class="empty">이 묶음에 단어가 없습니다.' + (cardPool === "wrong" ? "<br>퀴즈나 카드에서 틀린 단어가 여기에 모입니다." : "") + "</div>"; $("#cn", el).textContent = ""; return; }
       var c = deck[i], showEn = (front === "en") !== flipped;
       fc.innerHTML = (showEn ? '<div class="fw">' + esc(c.w) + "</div>" : '<div class="fm">' + esc(c.m) + "</div>") +
+        (flipped && c.s ? '<div class="syn"><b>동의어</b> ' + esc(c.s) + "</div>" : "") +
         (flipped ? '<div class="fx">' + esc(c.src) + "</div>" : "") +
         '<div class="hint">' + (flipped ? "" : "눌러서 뒤집기") + (state.known[c.k] ? " · 외운 단어" : "") + "</div>";
       $("#cn", el).textContent = (i + 1) + " / " + deck.length;
@@ -278,12 +279,17 @@
   views.quiz = function (el) {
     var mode = "en", queue = [], cur = null, n = 0, right = 0;
     el.innerHTML =
-      '<div><div class="eyebrow">4지선다 퀴즈</div><h2>뜻 고르기</h2></div>' +
+      '<div><div class="eyebrow">4지선다 퀴즈</div><h2>뜻·동의어 고르기</h2></div>' +
       '<div class="row">' + poolSelect("qp", quizPool) +
-      '<select id="qm"><option value="en">영어 보고 뜻 고르기</option><option value="ko">뜻 보고 영어 고르기</option></select>' +
+      '<select id="qm"><option value="en">영어 보고 뜻 고르기</option><option value="ko">뜻 보고 영어 고르기</option><option value="syn">동의어 고르기 (1~5번 유형)</option></select>' +
       '<button class="btn" id="qr">다시 시작</button></div>' +
       '<div class="panel" id="qb"></div>';
-    function start() { queue = shuffle(getPool(quizPool)); n = 0; right = 0; next(); }
+    function synList(x) { return (x.s || "").split(",").map(function (t) { return t.trim(); }).filter(Boolean); }
+    function start() {
+      queue = shuffle(getPool(quizPool));
+      if (mode === "syn") queue = queue.filter(function (x) { return synList(x).length; });
+      n = 0; right = 0; next();
+    }
     function next() {
       var box = $("#qb", el);
       if (!queue.length) {
@@ -293,17 +299,33 @@
         return;
       }
       cur = queue.shift();
-      var others = shuffle(pools.all.filter(function (x) { return x.k !== cur.k && x.m !== cur.m; })).slice(0, 3);
-      var choices = shuffle([cur].concat(others));
+      var choices;
+      if (mode === "syn") {
+        var mine = synList(cur), lower = mine.map(function (t) { return t.toLowerCase(); }).concat([cur.k]);
+        var used = {};
+        var others = shuffle(pools.all.filter(function (x) { return x.k !== cur.k && synList(x).length; })).filter(function (x) {
+          var t = shuffle(synList(x))[0];
+          if (lower.indexOf(t.toLowerCase()) >= 0 || lower.indexOf(x.k) >= 0 || used[t.toLowerCase()]) return false;
+          used[t.toLowerCase()] = 1; x._pick = t; return true;
+        }).slice(0, 3);
+        choices = shuffle([{ k: cur.k, label: shuffle(mine)[0], sub: "= " + cur.w + " (" + cur.m + ")" }].concat(others.map(function (x) {
+          return { k: x.k, label: x._pick, sub: "= " + x.w + " (" + x.m + ")" };
+        })));
+      } else {
+        choices = shuffle([cur].concat(shuffle(pools.all.filter(function (x) { return x.k !== cur.k && x.m !== cur.m; })).slice(0, 3))).map(function (c) {
+          return mode === "en" ? { k: c.k, label: c.m, sub: c.w } : { k: c.k, label: c.w, sub: c.m, word: 1 };
+        });
+      }
       box.innerHTML = '<div class="row" style="justify-content:space-between"><span class="score">' + (n + 1) + "번째 · 정답 " + right + '</span><span class="tag plain">' + esc(cur.src) + "</span></div>" +
-        '<div style="margin:16px 0" class="' + (mode === "en" ? "q-target" : "fm") + '">' + esc(mode === "en" ? cur.w : cur.m) + "</div>" +
+        (mode === "syn" ? '<small style="color:var(--muted)">다음 단어와 뜻이 가장 가까운 것은?</small>' : "") +
+        '<div style="margin:16px 0" class="' + (mode === "ko" ? "fm" : "q-target") + '">' + esc(mode === "ko" ? cur.m : cur.w) + "</div>" +
         '<div class="opts">' + choices.map(function (c, idx) {
-          return '<button class="opt" data-k="' + esc(c.k) + '"><span class="bubble">' + (idx + 1) + '</span><span><span class="' + (mode === "en" ? "" : "ow") + '">' + esc(mode === "en" ? c.m : c.w) + '</span><br><span class="om reveal-m" hidden>' + esc(mode === "en" ? c.w : c.m) + "</span></span></button>";
+          return '<button class="opt" data-k="' + esc(c.k) + '"><span class="bubble">' + (idx + 1) + '</span><span><span class="' + (mode === "en" ? "" : "ow") + '">' + esc(c.label) + '</span><br><span class="om reveal-m" hidden>' + esc(c.sub) + "</span></span></button>";
         }).join("") + "</div>" +
         '<div class="row" style="margin-top:14px;justify-content:flex-end"><button class="btn primary" id="qn" hidden>다음 →</button></div>';
       box.querySelectorAll(".opt").forEach(function (b) { b.onclick = function () { answer(b); }; });
       $("#qn", el).onclick = next;
-      if (mode === "en" && canSpeak) say(cur.w);
+      if (mode !== "ko" && canSpeak) say(cur.w);
     }
     function answer(b) {
       var box = $("#qb", el); if (!$("#qn", el).hidden) return;
@@ -313,6 +335,7 @@
         if (o.dataset.k === cur.k) o.classList.add("correct");
       });
       if (!ok) { b.classList.add("wrong"); markWrong(cur.k); } else { right++; }
+      if (cur.s && !box.querySelector(".qsyn")) box.querySelector(".opts").insertAdjacentHTML("afterend", '<div class="syn qsyn" style="margin-top:12px"><b>동의어</b> ' + esc(cur.s) + "</div>");
       n++; state.quiz.total++; if (ok) state.quiz.right++; save();
       $("#qn", el).hidden = false; $("#qn", el).focus();
     }

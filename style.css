@@ -181,3 +181,7 @@ th { color: var(--muted); font-weight: 500; font-size: .8rem; white-space: nowra
 }
 details.meta summary { cursor: pointer; width: fit-content; }
 details.meta { overflow-wrap: anywhere; }
+.syn { font-family: var(--f-word); font-size: .92rem; color: var(--ink); }
+.syn b { font-family: var(--f-body); font-size: .72rem; font-weight: 600; color: var(--omr); margin-right: 4px; letter-spacing: .02em; }
+.hide-m .witem .syn { visibility: hidden; }
+.hide-m .witem .m.peek + .syn { visibility: visible; }
