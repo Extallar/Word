@@ -406,9 +406,14 @@
     }
     $("#xy", el).onclick = function (e) {
       var b = e.target.closest("[data-y]"); if (!b) return;
-      yr = b.dataset.y; el.querySelectorAll("#xy .chip").forEach(function (c) { c.classList.toggle("on", c === b); }); draw();
+      yr = b.dataset.y; el.querySelectorAll("#xy .chip").forEach(function (c) { c.classList.toggle("on", c === b); }); draw(); applyAll();
     };
-    $("#xa", el).onclick = function () { el.querySelectorAll(".ctx").forEach(function (c) { c.querySelector(".reveal").hidden = false; c.querySelector(".tap").hidden = true; }); };
+    var allShown = false;
+    function applyAll() {
+      el.querySelectorAll(".ctx").forEach(function (c) { c.querySelector(".reveal").hidden = !allShown; c.querySelector(".tap").hidden = allShown; });
+      $("#xa", el).textContent = allShown ? "정답 모두 가리기" : "정답 모두 보기";
+    }
+    $("#xa", el).onclick = function () { allShown = !allShown; applyAll(); };
     $("#xg", el).onclick = function (e) {
       var c = e.target.closest(".ctx"); if (!c) return;
       var r = c.querySelector(".reveal"); r.hidden = !r.hidden; c.querySelector(".tap").hidden = !r.hidden;
