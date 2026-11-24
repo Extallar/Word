@@ -97,6 +97,8 @@ select { border: 1px solid var(--line); background: var(--surface); border-radiu
 .who::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
 .who-claude { color: var(--claude); } .who-claude::before { background: var(--claude); }
 .who-gpt { color: var(--gpt); } .who-gpt::before { background: var(--gpt); }
+.who-writer { color: var(--claude); } .who-writer::before { background: var(--claude); }
+.who-reviewer { color: var(--gpt); } .who-reviewer::before { background: var(--gpt); }
 .arrow { color: var(--muted); }
 
 /* ---------- 첫 화면: 입력 | AI 팀·보관함 ---------- */
@@ -135,6 +137,10 @@ select { border: 1px solid var(--line); background: var(--surface); border-radiu
 .sl-gpt.sl-run .dot, .sl-gpt.sl-done .dot { border-color: var(--gpt); }
 .sl-claude.sl-done .dot { background: var(--claude); }
 .sl-gpt.sl-done .dot { background: var(--gpt); }
+.sl-writer.sl-run .dot, .sl-writer.sl-done .dot { border-color: var(--claude); }
+.sl-reviewer.sl-run .dot, .sl-reviewer.sl-done .dot { border-color: var(--gpt); }
+.sl-writer.sl-done .dot { background: var(--claude); }
+.sl-reviewer.sl-done .dot { background: var(--gpt); }
 .sl small { display: block; color: var(--muted); font-size: .82rem; }
 .sl-wait { opacity: .55; }
 @media (prefers-reduced-motion: no-preference) { .sl-run .dot { animation: pulse 1.2s ease-in-out infinite; } }
@@ -222,6 +228,8 @@ select { border: 1px solid var(--line); background: var(--surface); border-radiu
 .msg p { margin: 0; }
 .msg-claude { align-self: flex-start; background: var(--claude-soft); border-top-left-radius: 4px; }
 .msg-gpt { align-self: flex-end; background: var(--gpt-soft); border-top-right-radius: 4px; }
+.msg-writer { align-self: flex-start; background: var(--claude-soft); border-top-left-radius: 4px; }
+.msg-reviewer { align-self: flex-end; background: var(--gpt-soft); border-top-right-radius: 4px; }
 .msg-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .msg .q { font-style: italic; }
 .msg ul { margin: 4px 0 0; padding-left: 20px; }
@@ -251,3 +259,21 @@ select { border: 1px solid var(--line); background: var(--surface); border-radiu
   .sum-grid { grid-template-columns: minmax(0, 1fr); }
   .msg { max-width: 100%; }
 }
+
+/* 파일 목록 (PDF 쪽 범위) */
+.files { display: flex; flex-direction: column; gap: 8px; }
+.files:empty { display: none; }
+.file { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.file b { font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
+.pg { width: 4.5em; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-family: var(--f-num); }
+.file .stu-x { margin-left: auto; }
+
+/* 질문하기 */
+.ask-head p { margin: 4px 0 0; }
+.chat { display: flex; flex-direction: column; gap: 12px; max-height: 60vh; overflow: auto; padding: 4px 2px; }
+.bub { max-width: min(760px, 86%); padding: 12px 16px; border-radius: 14px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+.bub-user { align-self: flex-end; background: var(--ink); color: var(--bg); border-bottom-right-radius: 4px; }
+.bub-assistant { align-self: flex-start; background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+.bub.thinking { color: var(--muted); font-style: italic; }
+.sugg .chip:disabled { opacity: .5; cursor: default; }
+.ask-box { display: flex; flex-direction: column; gap: 8px; }

@@ -373,7 +373,7 @@
       questions: shuffle(qs),
       note: "기본 모드(무료): AI 없이 규칙으로 만들었습니다. 정의 문장 " + defs.length + "개, 핵심어 " + kws.length + "개를 찾아 문제 " + qs.length + "개(" +
         Object.keys(counts).map(function (t) { return (S.TYPE_NAMES || {})[t] + " " + counts[t]; }).join(", ") + ")를 만들었습니다." +
-        (qs.length < n ? " 자료가 짧아 요청한 " + n + "개보다 적게 나왔습니다." : "") + " AI 키를 넣으면 내용 이해 문제와 자세한 해설이 만들어집니다."
+        (qs.length < n ? " 자료가 짧아 요청한 " + n + "개보다 적게 나왔습니다." : "") + " claude.ai에서 열면 Claude가 내용 이해 문제와 자세한 해설을 만듭니다."
     };
   }
 
