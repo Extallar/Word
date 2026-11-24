@@ -410,7 +410,8 @@
     var idx = qs.map(function (q, i) { return i; }).filter(function (i) { return qFilter === "all" || (qFilter === "wrong" ? a[i] && !a[i].ok : !a[i]); });
     body.innerHTML =
       '<div class="scorebar row" style="justify-content:space-between"><span class="row">' + [["all", "전체 " + s.n], ["todo", "안 푼 문제 " + (s.n - s.done)], ["wrong", "틀린 문제 " + s.wrong]].map(function (f) { return '<button class="chip' + (qFilter === f[0] ? " on" : "") + '" data-f="' + f[0] + '">' + f[1] + "</button>"; }).join("") + "</span>" +
-      '<span class="row"><button class="btn sm" id="smore"' + (aiState === "on" && cur.text ? "" : " hidden") + ">Claude에게 문제 " + st.cfg.n + "개 더 받기</button>" + '<button class="btn sm" id="sreset">다시 풀기</button></span></div>' +
+      '<span class="row"><button class="btn sm" id="smore"' + (aiState === "on" && cur.text ? "" : " hidden") + ">Claude에게 문제 " + st.cfg.n + "개 더 받기</button>" + resetBtn(s) + "</span></div>" +
+      (cur.ansUndo ? '<p class="stu-note undo">' + esc(cur.ansUndo.what) + ' 기록을 지웠어요. <button class="btn sm" id="sundo">되돌리기</button></p>' : "") +
       '<p class="stu-mut" id="smoremsg" hidden></p>' +
       '<div class="qgrid">' + (idx.length ? idx.map(function (i) { return qHtml(qs[i], i); }).join("") : '<div class="empty">' + (qFilter === "wrong" ? "틀린 문제가 없습니다." : "모두 풀었습니다.") + "</div>") + "</div>";
     body.querySelectorAll(".stu-q").forEach(function (c) { var i = +c.dataset.q; if (a[i]) showAns(c, qs[i], a[i]); });
@@ -423,6 +424,13 @@
       if (k % 2) return '<pre class="code">' + esc(part.replace(/^\n|\n$/g, "")).replace(/_{3,}/g, '<span class="blank code-blank"></span>') + "</pre>";
       return esc(part).replace(/\n/g, "<br>").replace(/_{3,}/g, '<span class="blank"></span>');
     }).join("");
+  }
+  // 지금 보는 화면(전체/틀린 문제)에 맞는 기록만 지운다. 안 푼 문제 화면에서는 버튼을 숨긴다.
+  function dropUndo() { if (cur.ansUndo) { delete cur.ansUndo; var u = el.querySelector(".stu-note.undo"); if (u) u.remove(); } }
+  function resetBtn(s) {
+    if (qFilter === "todo" || !s.done) return "";
+    if (qFilter === "wrong") return s.wrong ? '<button class="btn sm" id="sreset" data-scope="wrong">틀린 문제 ' + s.wrong + "개 다시 풀기</button>" : "";
+    return '<button class="btn sm" id="sreset" data-scope="all">전체 다시 풀기</button>';
   }
   function qHtml(q, i) {
     var opts = q.type === "ox" ? ["O", "X"] : (q.options || []), isCode = /```/.test(q.question);
@@ -462,6 +470,7 @@
       (q.evidence ? '<p class="stu-ev">근거: “' + esc(q.evidence) + "”</p>" : "") +
       (short ? gradeHtml(rec.ai) : "") +
       (short && rec.self == null ? '<div class="row self"><span class="stu-mut">내 답이 맞았나요?</span><button class="btn good sm" data-self="1">맞았어요</button><button class="btn bad sm" data-self="0">틀렸어요</button>' + (canAI && !rec.ai ? '<button class="btn sm" data-grade>Claude에게 채점 맡기기</button>' : "") + '<span class="stu-mut gmsg"></span></div>' : "") +
+      '<div class="row redo"><button class="linkbtn" data-redo>이 문제 다시 풀기</button></div>' +
       (short && rec.self != null ? '<p class="' + (rec.ok ? "ok" : "ng") + '"><b>' + (rec.by === "ai" && rec.ai && rec.ai.verdict ? VERDICT[rec.ai.verdict] : rec.ok ? "맞음" : "틀림") + "</b> (" + (rec.by === "ai" ? "Claude 채점" + (rec.ai && rec.ai.verdict === "partial" ? " · 틀린 문제에 넣어 다시 풀게 했어요" : "") : "스스로 채점") + ")</p>" : "") +
       "</div>";
   }
@@ -469,14 +478,30 @@
     var qs = cur.result.questions, card = e.target.closest(".stu-q");
     var f = e.target.closest("[data-f]"); if (f) { qFilter = f.dataset.f; drawQuiz(el.querySelector("#sbody")); return; }
     if (e.target.id === "sreset") {
-      if (e.target.dataset.sure) { cur.ans = {}; save(); qFilter = "all"; draw(); }
-      else { e.target.dataset.sure = 1; e.target.textContent = "기록 지우고 다시 풀기"; e.target.classList.add("bad"); }
+      var scope = e.target.dataset.scope, st0 = stats();
+      if (scope === "wrong") {
+        // 틀린 문제만 지운다(맞은 기록은 그대로)
+        var backup = JSON.parse(JSON.stringify(cur.ans)), n = 0;
+        Object.keys(cur.ans).forEach(function (k) { if (!cur.ans[k].ok) { delete cur.ans[k]; n++; } });
+        cur.ansUndo = { ans: backup, what: "틀린 문제 " + n + "개의" };
+        save(); qFilter = "todo"; draw(); return;
+      }
+      if (e.target.dataset.sure) {
+        cur.ansUndo = { ans: JSON.parse(JSON.stringify(cur.ans)), what: "전체 " + st0.done + "문제(정답 " + st0.ok + "개 포함)의" };
+        cur.ans = {}; save(); qFilter = "all"; draw();
+      } else { e.target.dataset.sure = 1; e.target.textContent = "정답 " + st0.ok + "개를 포함해 전부 지우기"; e.target.classList.add("bad"); }
       return;
     }
+    if (e.target.id === "sundo") { if (cur.ansUndo) { cur.ans = cur.ansUndo.ans; delete cur.ansUndo; save(); draw(); } return; }
     if (e.target.id === "smore") { moreQuestions(e.target); return; }
     if (!card) return;
     var i = +card.dataset.q, q = qs[i], rec = cur.ans[i];
+    if (e.target.closest("[data-redo]")) {
+      delete cur.ans[i]; save();
+      var tmp = document.createElement("div"); tmp.innerHTML = qHtml(q, i); card.replaceWith(tmp.firstChild); upd(); return;
+    }
     var o = e.target.closest(".opt");
+    if ((o && !o.disabled) || e.target.closest("[data-show]")) dropUndo();
     if (o && !o.disabled) {
       var txt = q.type === "ox" ? (o.dataset.o === "0" ? "O" : "X") : q.options[+o.dataset.o];
       cur.ans[i] = { ok: norm(txt) === norm(q.answer), pick: +o.dataset.o };
