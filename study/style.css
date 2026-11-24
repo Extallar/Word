@@ -146,6 +146,7 @@ select { border: 1px solid var(--line); background: var(--surface); border-radiu
 .side-nav .btn.sm { align-self: flex-start; }
 .side-title { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .side-title small { color: var(--omr); font-weight: 600; font-size: .8rem; }
+.side-title small.src { color: var(--muted); font-weight: 400; }
 .side-title h2 { font-size: 1.3rem; overflow-wrap: anywhere; }
 .vtabs { display: flex; flex-direction: column; gap: 2px; }
 .vtab { display: flex; justify-content: space-between; align-items: center; text-align: left; border: 0; background: none; padding: 10px 12px; border-radius: 8px; color: var(--muted); font-weight: 500; border-left: 3px solid transparent; }
@@ -161,8 +162,9 @@ select { border: 1px solid var(--line); background: var(--surface); border-radiu
 #sbody { display: flex; flex-direction: column; gap: 18px; }
 
 /* 요약 */
-.sum-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.sum-grid .stu-one, .sum-grid .notes { grid-column: 1 / -1; }
+.sum-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.sum-grid .stu-ul { columns: 2 340px; column-gap: 36px; }
+.sum-grid .stu-ul li { break-inside: avoid; }
 .stu-one { border-left: 4px solid var(--omr); }
 .stu-one small { color: var(--muted); }
 .stu-one p { margin: 4px 0 0; font-size: 1.15rem; font-weight: 600; line-height: 1.6; }

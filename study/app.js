@@ -11,7 +11,7 @@
 
   /* ---------- 저장 ---------- */
   var st = { items: [], cfg: { n: 10, level: "보통", types: { mcq: 1, ox: 1, blank: 1, short: 1 }, claudeModel: AI.claude.models[0][0], gptModel: AI.gpt.models[0][0], lead: "claude", rounds: 1 } };
-  try { var sv = JSON.parse(localStorage.getItem(SKEY) || "null"); if (sv) { st.items = sv.items || []; Object.assign(st.cfg, sv.cfg || {}); } } catch (e) {}
+  try { var sv = JSON.parse(localStorage.getItem(SKEY) || "null"); if (sv) { st.items = sv.items || []; st.presetsAdded = sv.presetsAdded || {}; Object.assign(st.cfg, sv.cfg || {}); } } catch (e) {}
   if (sv && sv.cfg && sv.cfg.model && !sv.cfg.claudeModel) st.cfg.claudeModel = sv.cfg.model;
   function save() {
     try { localStorage.setItem(SKEY, JSON.stringify(st)); return true; }
@@ -20,6 +20,14 @@
       return false;
     }
   }
+  // 기본 제공 학습 세트(sets.js)를 처음 한 번만 보관함 맨 위에 넣는다. 지운 세트는 다시 넣지 않는다.
+  st.presetsAdded = st.presetsAdded || {};
+  (S.PRESETS || []).slice().reverse().forEach(function (p) {
+    if (st.presetsAdded[p.id]) return;
+    st.items.unshift({ id: p.id, title: p.title, created: Date.now(), mode: "preset", preset: true, source: p.source, text: p.text, result: JSON.parse(JSON.stringify(p.result)), ans: {} });
+    st.presetsAdded[p.id] = 1;
+  });
+  save();
   var keys = { claude: "", gpt: "" }, remember = true;
   try {
     var kv = JSON.parse(localStorage.getItem(KKEY) || "null");
@@ -35,6 +43,7 @@
   function who(w) { return '<span class="who who-' + w + '">' + AI[w].name + "</span>"; }
   function modeTag(it) {
     var r = it.result || {};
+    if (it.preset) return '<span class="tag good">기본 제공 · Claude 제작</span>';
     if (it.mode !== "ai") return '<span class="tag plain">기본 모드</span>';
     if (r.team && r.team.solo) return '<span class="tag plain">' + AI[r.team.solo].name + " 단독</span>";
     return '<span class="tag duo">Claude × GPT</span>';
@@ -232,7 +241,7 @@
       '<div class="item">' +
       '<nav class="side-nav" aria-label="자료 메뉴">' +
         '<button class="btn sm" id="sback">← 보관함</button>' +
-        '<div class="side-title"><small>' + fmtDate(cur.created) + "</small><h2>" + esc(cur.title) + "</h2>" + modeTag(cur) + "</div>" +
+        '<div class="side-title"><small>' + fmtDate(cur.created) + "</small><h2>" + esc(cur.title) + "</h2>" + modeTag(cur) + (cur.source ? '<small class="src">출처: ' + esc(cur.source) + "</small>" : "") + "</div>" +
         '<div class="vtabs" role="tablist">' + tabs.map(function (t) { return '<button role="tab" aria-selected="' + (tab === t[0]) + '" class="vtab' + (tab === t[0] ? " on" : "") + '" data-tab="' + t[0] + '">' + t[1] + (t[2] != null ? '<span class="num">' + t[2] + "</span>" : "") + "</button>"; }).join("") + "</div>" +
         '<div class="side-score"><small>문제 풀이</small><b class="num" id="sscore">' + s.ok + " / " + s.done + '</b><small id="sscore2">' + s.n + "문제 중 " + s.done + "개 풀이" + (s.done ? " · 정답률 " + Math.round(s.ok / s.done * 100) + "%" : "") + '</small><div class="bar"><i id="sbar" style="width:' + (s.n ? s.done / s.n * 100 : 0) + '%"></i></div></div>' +
       "</nav>" +
