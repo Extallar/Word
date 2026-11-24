@@ -25,8 +25,12 @@
       return !/[.?!。:;,]$/.test(t) && !/[다요]$/.test(t) && next && next.trim().length > t.length;
     }
     for (var i = 0; i < lines.length; i++) {
-      var l = lines[i].trim();
+      // 슬라이드 글머리표 기호(¡ l § ® ●)를 떼고, 쪽 표시·쪽 번호·의사 코드 줄·입출력 설명은 문장으로 쓰지 않는다.
+      var l = lines[i].trim().replace(/^(?:[¡§®•▪◦●○■□➢✓]|l(?=\s+\S.*[가-힣]))\s*/, "");
       if (!l) { para++; continue; }
+      if (/^\[p\.\d+\]$/.test(l) || /^\d{1,3}$/.test(l) || /^(입력|출력|Input|Output)\s*:/i.test(l)) continue;
+      if (/^\d{1,2}\.\s+/.test(l) && CODE_KW.test(l.replace(/^\d{1,2}\.\s+/, "")) && /\b(for|while|if|return)\b|[←↔]|\[[^\]]*\]\s*=|=\s*\S/.test(l)) continue;
+      if (/^\s{2,}/.test(lines[i]) && i > 0 && /^\s*\d{1,2}\.\s/.test(lines[i - 1]) && CODE_KW.test(lines[i])) continue;
       var next = lines.slice(i + 1).filter(function (x) { return x.trim(); })[0];
       // "용어: 설명" 형식 필기
       var m = l.match(/^\s*[-•*·▶◦]?\s*([^:：]{1,30}?)\s*[:：]\s+(.{6,})$/) || l.match(/^\s*[-•*·▶◦]?\s*([^–—-]{1,30}?)\s+[–—-]\s+(.{6,})$/);
@@ -202,10 +206,67 @@
     return null;
   }
 
+  /* ---------- 의사 코드 찾기 → 빈칸 문제 ---------- */
+  var CODE_KW = /\b(for|while|if|else|return|to|and|or|do|repeat|until|then)\b|[←↔=<>]|\[[^\]]*\]/;
+  function findCode(text) {
+    var lines = text.replace(/\r/g, "").split("\n"), blocks = [], cur = null;
+    function flush() { if (cur && cur.lines.length >= 3) blocks.push(cur); cur = null; }
+    lines.forEach(function (raw, i) {
+      var l = raw.replace(/\s+$/, ""), m = l.match(/^\s*(\d{1,2})\.\s+(.*)$/);
+      if (m && CODE_KW.test(m[2]) && m[2].length < 120) {
+        var num = +m[1];
+        if (!cur || num !== cur.next) { flush(); if (num !== 1) return; cur = { lines: [], next: 1, start: i }; }
+        cur.lines.push(num + ". " + m[2].trim()); cur.next = num + 1;
+      } else if (cur && /^\s{2,}\S/.test(raw) && cur.lines.length) cur.lines[cur.lines.length - 1] += " " + l.trim();
+      else if (cur && l.trim()) flush();
+    });
+    flush();
+    blocks.forEach(function (b) {
+      // 블록 바로 위의 이름(BubbleSort 같은 한 단어)과 [p.N] 표시를 찾는다.
+      for (var k = b.start - 1; k >= Math.max(0, b.start - 6); k--) {
+        var t = lines[k].trim();
+        if (!b.title && /^[A-Za-z][A-Za-z0-9_]{2,30}$/.test(t)) b.title = t;
+        var pm = t.match(/^\[p\.(\d+)\]$/); if (pm && !b.page) b.page = "p." + pm[1];
+      }
+      if (!b.page) for (var k2 = b.start; k2 >= 0; k2--) { var pm2 = lines[k2].trim().match(/^\[p\.(\d+)\]$/); if (pm2) { b.page = "p." + pm2[1]; break; } }
+      b.title = b.title || "의사 코드";
+      b.code = b.lines.join("\n");
+    });
+    return blocks;
+  }
+  // 한 줄에서 빈칸으로 낼 후보: 반복 끝 범위, 비교 연산자, 배열 인덱스, 대입의 오른쪽
+  function codeBlanks(line) {
+    var body = line.replace(/^\d+\.\s*/, "").replace(/\/\/.*$/, "").trim(), out = [];
+    var m = body.match(/\bto\s+([^\s]+)/); if (m) out.push({ kind: "bound", t: m[1] });
+    m = body.match(/\s(>=|<=|>|<|==|!=)\s/); if (m) out.push({ kind: "op", t: m[1] });
+    m = body.match(/\[([^\]]+)\]/); if (m && !/^\d+$/.test(m[1])) out.push({ kind: "idx", t: m[1] });
+    m = body.match(/(?:=|←)\s*([^=←]+)$/); if (m && !/^(for|while|if)\b/.test(body) && m[1].trim().length <= 24 && !/^\s*[<>]/.test(m[1])) out.push({ kind: "rhs", t: m[1].trim() });
+    return out;
+  }
+  function codeQuestions(blocks, level) {
+    var qs = [], OPS = [">", "<", ">=", "<="], pool = { bound: ["n", "n-1", "n-2", "k", "n-pass", "heapSize"], idx: ["i", "j", "i+1", "j+1", "i-1", "j-h", "min", "heapSize"], rhs: ["i", "j", "j-1", "i-1", "j-h", "n", "A[i]", "A[j]"] };
+    blocks.forEach(function (b) {
+      var cands = [];
+      b.lines.forEach(function (l, li) { codeBlanks(l).forEach(function (c) { cands.push({ li: li, c: c }); }); });
+      // 같은 종류끼리 보기를 모은다(이 코드 안의 다른 값 + 자주 쓰는 값)
+      cands.forEach(function (x) { if (pool[x.c.kind]) pool[x.c.kind].push(x.c.t); });
+      shuffle(cands).slice(0, Math.min(cands.length, level === "어려움" ? 6 : 4)).forEach(function (x) {
+        var line = b.lines[x.li], t = x.c.t, cp = line.replace(/\/\/.*$/, ""), at = x.c.kind === "bound" ? cp.lastIndexOf(t) : cp.indexOf(t);
+        if (at < 0) return;
+        var shown = b.lines.slice(); shown[x.li] = line.slice(0, at) + "_____" + line.slice(at + t.length);
+        var opts = x.c.kind === "op" ? OPS.slice() : [t].concat(shuffle(uniq(pool[x.c.kind].filter(function (o) { return o !== t; }))).slice(0, 3));
+        opts = uniq(opts); if (opts.indexOf(t) < 0 || opts.length < 3) return;
+        qs.push({ type: "blank", question: "다음은 " + b.title + " 의사 코드다. 빈칸에 들어갈 것은?\n```\n" + shown.join("\n") + "\n```", options: shuffle(opts), answer: t,
+          explanation: "원래 " + (x.li + 1) + "행: " + line, evidence: b.title + (b.page ? " (" + b.page + ")" : ""), key: "code:" + b.title + ":" + x.li + ":" + x.c.kind, w: 100 });
+      });
+    });
+    return qs;
+  }
+
   /* ---------- 4. 만들기 ---------- */
   function buildLocal(text, cfg) {
     var P = parse(text), sents = P.sents, en = isEnglish(text), level = cfg.level || "보통";
-    var kws = keywords(P, en), defs = findDefs(P, en);
+    var kws = keywords(P, en), defs = findDefs(P, en), codes = findCode(text);
     var kwWords = kws.map(function (k) { return k.word; });
     var W = {}; kws.forEach(function (k) { W[k.k] = k.w; });
 
@@ -261,7 +322,7 @@
     });
 
     /* ----- 문제 후보 ----- */
-    var cand = { mcq: [], blank: [], ox: [], short: [] };
+    var cand = { mcq: [], blank: codeQuestions(codes, level), ox: [], short: [] };
     var defTerms = defs.map(function (d) { return d.term; }), defDefs = defs.map(function (d) { return d.def; });
     function blankOut(sent, word) {
       if (!en) {
@@ -345,7 +406,7 @@
       var q = null;
       for (var pass = 0; pass < 2 && !q; pass++) for (var i = 0; i < c.length; i++) {
         var base = c[i].key.split(/[#@]/)[0], sk = c[i].evidence;
-        if (usedKey[c[i].key] || usedKey[base + t] || (usedSent[sk] && usedSent[sk] >= (sents.length < 20 ? 2 : 1))) continue;
+        if (usedKey[c[i].key] || usedKey[base + t] || (c[i].key.indexOf("code:") !== 0 && usedSent[sk] && usedSent[sk] >= (sents.length < 20 ? 2 : 1))) continue;
         if (t === "ox" && pass === 0 && c[i].answer === lastOX) continue;  // O와 X를 번갈아
         q = c.splice(i, 1)[0]; break;
       }
@@ -367,11 +428,12 @@
       summary: {
         one_line: oneLine(),
         key_points: top.map(function (t) { return t.text; }),
-        sections: sections
+        sections: sections,
+        code: codes.map(function (b) { return { title: b.title, page: b.page || "", code: b.code }; })
       },
       terms: terms,
       questions: shuffle(qs),
-      note: "기본 모드(무료): AI 없이 규칙으로 만들었습니다. 정의 문장 " + defs.length + "개, 핵심어 " + kws.length + "개를 찾아 문제 " + qs.length + "개(" +
+      note: "기본 모드(무료): AI 없이 규칙으로 만들었습니다. 정의 문장 " + defs.length + "개, 핵심어 " + kws.length + "개" + (codes.length ? ", 의사 코드 " + codes.length + "개" : "") + "를 찾아 문제 " + qs.length + "개(" +
         Object.keys(counts).map(function (t) { return (S.TYPE_NAMES || {})[t] + " " + counts[t]; }).join(", ") + ")를 만들었습니다." +
         (qs.length < n ? " 자료가 짧아 요청한 " + n + "개보다 적게 나왔습니다." : "") + " claude.ai에서 열면 Claude가 내용 이해 문제와 자세한 해설을 만듭니다."
     };

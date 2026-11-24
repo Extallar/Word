@@ -71,7 +71,8 @@
     var s = r.summary || {};
     var out = {
       title: str(r.title),
-      summary: { one_line: str(s.one_line), key_points: arr(s.key_points).map(str).filter(Boolean), sections: arr(s.sections).map(function (x) { return { heading: str(x && x.heading), body: str(x && x.body) }; }).filter(function (x) { return x.body; }) },
+      summary: { one_line: str(s.one_line), key_points: arr(s.key_points).map(str).filter(Boolean), sections: arr(s.sections).map(function (x) { return { heading: str(x && x.heading), body: str(x && x.body) }; }).filter(function (x) { return x.body; }),
+        code: arr(s.code).map(function (x) { return { title: str(x && x.title), page: str(x && x.page), code: x && x.code != null ? String(x.code).replace(/\s+$/, "") : "" }; }).filter(function (x) { return x.code; }) },
       terms: arr(r.terms).map(function (x) { return { term: str(x && x.term), definition: str(x && x.definition) }; }).filter(function (x) { return x.term && x.definition; }),
       questions: arr(r.questions).map(normQ).filter(Boolean)
     };
@@ -91,10 +92,12 @@
     "blank(문장에 _____ 빈칸, options 4개, answer는 options 중 하나), short(단답·서술, options는 빈 배열, answer는 모범 답안).\n" +
     "- 개념 확인뿐 아니라 직접 계산·추적해 보는 문제(예: 알고리즘 수행 과정, 공식 적용)도 자료에 있으면 섞으세요.\n" +
     "- 오답 선지는 그럴듯하지만 자료를 읽으면 틀렸음을 알 수 있게 만드세요. 정답 위치를 골고루 섞으세요.\n" +
+    "- 자료에 의사 코드·소스 코드가 있으면 summary.code에 {title, page, code}로 줄 번호까지 원문 그대로 옮기고, 반복 범위·비교 조건·배열 인덱스·대입 같은 핵심 부분을 빈칸(_____)으로 묻는 blank 문제를 꼭 포함하세요. 코드는 question 안에서 ``` 로 감쌉니다(예: \"다음은 ○○ 의사 코드다. 빈칸에 들어갈 것은?\\n```\\n1. for i = 1 to _____\\n```\").\n" +
+    "- 그림·표·그래프 이미지를 함께 받았다면 그 내용(수행 과정 단계, 표의 값, 그래프의 순서)도 정리 노트와 문제에 반영하세요.\n" +
     "- explanation은 정답인 이유와 헷갈리기 쉬운 오답이 틀린 이유를 씁니다. evidence는 근거가 되는 원문 구절을 그대로 인용하고, 자료에 [p.12] 같은 쪽 표시가 있으면 끝에 쪽 번호를 붙입니다.";
   var SHAPE =
     '응답은 다음 모양의 JSON 객체 하나만 보내세요:\n' +
-    '{"title": "자료 제목", "summary": {"one_line": "...", "key_points": ["..."], "sections": [{"heading": "...", "body": "..."}]}, ' +
+    '{"title": "자료 제목", "summary": {"one_line": "...", "key_points": ["..."], "sections": [{"heading": "...", "body": "..."}], "code": [{"title": "알고리즘 이름", "page": "p.9", "code": "1. for ..."}]}, ' +
     '"terms": [{"term": "...", "definition": "..."}], ' +
     '"questions": [{"type": "mcq", "question": "...", "options": ["...","...","...","..."], "answer": "...", "explanation": "...", "evidence": "..."}]}';
   function request(cfg) {
@@ -109,7 +112,7 @@
     var t = src.text || "";
     var cut = t.length > MAX_SRC;
     return "<자료" + (src.name ? ' 제목="' + src.name.replace(/"/g, "'") + '"' : "") + ">\n" + (cut ? t.slice(0, MAX_SRC) : t) + "\n</자료>" +
-      (src.images && src.images.length ? "\n(자료 사진 " + src.images.length + "장을 함께 보냈습니다. 사진 속 내용도 자료입니다.)" : "") +
+      (src.images && src.images.length ? "\n(이미지 " + src.images.length + "장을 함께 보냈습니다. 순서대로: " + src.images.map(function (im) { return im.label || "사진"; }).join(", ") + ". 이미지 속 그림·표·그래프 내용도 자료입니다.)" : "") +
       (cut ? "\n(자료가 길어 앞부분 " + MAX_SRC.toLocaleString() + "자만 보냈습니다.)" : "");
   }
   function J(x) { return JSON.stringify(x); }

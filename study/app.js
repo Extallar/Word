@@ -29,10 +29,16 @@
     }
   }
   // 기본 제공 세트를 처음 한 번만 보관함 맨 위에 넣는다. 지운 세트는 다시 넣지 않는다.
+  // 이미 넣은 세트는 새 판(ver)이 나오면 내용만 바꾸고 풀이 기록은 그대로 둔다(문제는 뒤에만 추가되므로 번호가 유지됨).
   (S.PRESETS || []).slice().reverse().forEach(function (p) {
-    if (st.presetsAdded[p.id]) return;
-    st.items.unshift({ id: p.id, title: p.title, created: Date.now(), mode: "preset", preset: true, source: p.source, text: p.text, result: JSON.parse(JSON.stringify(p.result)), ans: {} });
-    st.presetsAdded[p.id] = 1;
+    var ver = p.ver || 1;
+    if (st.presetsAdded[p.id]) {
+      var it = st.items.filter(function (x) { return x.id === p.id; })[0];
+      if (it && (it.presetVer || 1) < ver) { it.result = JSON.parse(JSON.stringify(p.result)); it.text = p.text; it.title = p.title; it.source = p.source; it.presetVer = ver; it.updatedNote = true; }
+      return;
+    }
+    st.items.unshift({ id: p.id, title: p.title, created: Date.now(), mode: "preset", preset: true, presetVer: ver, source: p.source, text: p.text, result: JSON.parse(JSON.stringify(p.result)), ans: {} });
+    st.presetsAdded[p.id] = ver;
   });
   save();
 
@@ -92,13 +98,42 @@
     return p.then(function () { return out.join("\n\n"); });
   }
 
+  // 그림이 있거나 글자가 거의 없는 쪽을 골라(그림이 있는 쪽 먼저, 글자가 적은 쪽 먼저) 최대 max쪽까지
+  function figurePages(doc, from, to, max) {
+    if (max <= 0) return Promise.resolve([]);
+    var lib = window.pdfjsLib, OPS = lib && lib.OPS || {}, IMG = [OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageMaskXObject, OPS.paintJpegXObject].filter(function (x) { return x != null; });
+    var info = [], p = Promise.resolve();
+    for (var n = from; n <= to; n++) (function (n) {
+      p = p.then(function () { return doc.getPage(n); }).then(function (pg) {
+        return Promise.all([pg.getOperatorList(), pg.getTextContent()]).then(function (r) {
+          var img = r[0].fnArray.some(function (f) { return IMG.indexOf(f) >= 0; });
+          var len = r[1].items.reduce(function (a, it) { return a + it.str.replace(/\s+/g, "").length; }, 0);
+          if (img || len < 40) info.push({ n: n, img: img, len: len });
+        });
+      });
+    })(n);
+    return p.then(function () {
+      return info.sort(function (a, b) { return (b.img - a.img) || (a.len - b.len); }).slice(0, max).sort(function (a, b) { return a.n - b.n; }).map(function (x) { return x.n; });
+    });
+  }
+  function pageImage(doc, n) {
+    return doc.getPage(n).then(function (pg) {
+      var v1 = pg.getViewport({ scale: 1 }), scale = Math.min(2, 1400 / v1.width), v = pg.getViewport({ scale: scale });
+      var c = document.createElement("canvas"); c.width = Math.round(v.width); c.height = Math.round(v.height);
+      var ctx = c.getContext("2d"); ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+      return pg.render({ canvasContext: ctx, viewport: v }).promise.then(function () {
+        return new Promise(function (res) { c.toBlob(function (b) { res(b); }, "image/jpeg", 0.85); });
+      });
+    });
+  }
+
   /* ---------- 파일 읽기 ---------- */
   function readFile(f) {
     return new Promise(function (res, rej) {
       var r = new FileReader();
       r.onerror = function () { rej(new Error(f.name + "을(를) 읽지 못했습니다.")); };
       if (/\.pdf$/i.test(f.name) || f.type === "application/pdf") {
-        r.onload = function () { openPdf(new Uint8Array(r.result)).then(function (doc) { res({ kind: "pdf", name: f.name, doc: doc, pages: doc.numPages, from: 1, to: doc.numPages }); }, function (e) { rej(new Error(f.name + ": PDF를 열지 못했습니다. " + (e.message || ""))); }); };
+        r.onload = function () { openPdf(new Uint8Array(r.result)).then(function (doc) { res({ kind: "pdf", name: f.name, doc: doc, pages: doc.numPages, from: 1, to: doc.numPages, figs: true }); }, function (e) { rej(new Error(f.name + ": PDF를 열지 못했습니다. " + (e.message || ""))); }); };
         r.readAsArrayBuffer(f);
       } else if (/^image\/(png|jpeg|gif|webp)$/.test(f.type)) res({ kind: "image", name: f.name, type: f.type, blob: f });
       else if (/\.(txt|md|csv|tsv|html?|json|srt|vtt)$/i.test(f.name) || /^text\//.test(f.type)) {
@@ -170,7 +205,8 @@
       box.innerHTML = files.map(function (f, i) {
         if (f.kind === "pdf") return '<div class="file"><span class="tag plain">PDF</span><b>' + esc(f.name) + '</b><span class="stu-mut">' + f.pages + '쪽 중</span>' +
           '<input type="number" class="pg" data-pf="' + i + '" min="1" max="' + f.pages + '" value="' + f.from + '" aria-label="시작 쪽">~<input type="number" class="pg" data-pt="' + i + '" min="1" max="' + f.pages + '" value="' + f.to + '" aria-label="끝 쪽"><span class="stu-mut">쪽</span>' +
-          '<button class="stu-x" data-rm="' + i + '" aria-label="' + esc(f.name) + ' 빼기">×</button></div>';
+          '<button class="stu-x" data-rm="' + i + '" aria-label="' + esc(f.name) + ' 빼기">×</button>' +
+          (aiState === "on" ? '<label class="chk fig"><input type="checkbox" data-fig="' + i + '"' + (f.figs ? " checked" : "") + '> 그림·표가 있는 쪽은 이미지로도 Claude에게 보여 주기' + (imgLimits ? ' <span class="stu-mut">(최대 ' + imgLimits.maxCount + "쪽)</span>" : "") + "</label>" : "") + "</div>";
         return '<div class="file"><span class="tag plain">이미지</span><b>' + esc(f.name) + "</b>" + (aiState === "on" ? "" : '<span class="stu-mut">(AI 모드에서만 읽음)</span>') + '<button class="stu-x" data-rm="' + i + '" aria-label="' + esc(f.name) + ' 빼기">×</button></div>';
       }).join("");
     }
@@ -198,7 +234,9 @@
     box.addEventListener("drop", function (e) { e.preventDefault(); box.classList.remove("drop"); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
     $("#sfiles").onclick = function (e) { var b = e.target.closest("[data-rm]"); if (b) { files.splice(+b.dataset.rm, 1); drawFiles(); } };
     $("#sfiles").onchange = function (e) {
-      var t = e.target, i = +(t.dataset.pf || t.dataset.pt), f = files[i]; if (!f) return;
+      var t = e.target;
+      if (t.dataset.fig != null) { var ff = files[+t.dataset.fig]; if (ff) ff.figs = t.checked; return; }
+      var i = +(t.dataset.pf || t.dataset.pt), f = files[i]; if (!f) return;
       var v = Math.max(1, Math.min(f.pages, Math.round(+t.value) || 1));
       if (t.dataset.pf != null) f.from = Math.min(v, f.to); else f.to = Math.max(v, f.from);
       drawFiles();
@@ -249,7 +287,24 @@
           return finish("local", title || r.title, text, r, warn + (imgs.length ? "이미지는 AI 모드에서만 읽을 수 있어 빼고 만들었습니다." : ""), source);
         }
         if (imgs.length && imgLimits && imgs.length > imgLimits.maxCount) throw new Error("이미지는 한 번에 " + imgLimits.maxCount + "장까지 넣을 수 있습니다.");
+        var room = imgLimits ? imgLimits.maxCount - imgs.length : 0;
+        var figPdfs = pdfs.filter(function (f) { return f.figs; });
+        var pre = Promise.resolve([]);
+        if (room > 0 && figPdfs.length) {
+          $("#sstatus").textContent = "그림이 있는 쪽을 찾아 이미지로 바꾸는 중…";
+          pre = figPdfs.reduce(function (acc, f) {
+            return acc.then(function (out) {
+              var left = room - out.length; if (left <= 0) return out;
+              return figurePages(f.doc, f.from, f.to, left).then(function (ns) {
+                return ns.reduce(function (a2, n) { return a2.then(function (o2) { return pageImage(f.doc, n).then(function (b) { if (b) o2.push({ blob: b, label: (pdfs.length > 1 ? f.name + " " : "") + "p." + n }); return o2; }); }); }, Promise.resolve(out));
+              });
+            });
+          }, Promise.resolve([]));
+        }
+        return pre.then(function (figImgs) {
+        var allImgs = imgs.map(function (im) { return { blob: im.blob, label: "사진 " + im.name }; }).concat(figImgs);
         var steps = S.plan(cfg), state = steps.map(function () { return { s: "wait" }; }), prog = $("#sprog");
+        if (figImgs.length) warn += "그림 쪽 " + figImgs.map(function (x) { return x.label; }).join(", ") + "을(를) 이미지로 함께 보냈습니다. ";
         var ctl = new AbortController(); busy = ctl; $("#sstop").hidden = false;
         function drawProg() {
           if (!prog.isConnected) return;
@@ -261,7 +316,7 @@
           }).join("") + "</ol>";
         }
         var timer = setInterval(drawProg, 1000); drawProg();
-        return S.generate({ text: text, name: title, images: imgs }, cfg, function (ev) {
+        return S.generate({ text: text, name: title, images: allImgs }, cfg, function (ev) {
           var s = state[ev.i];
           if (ev.state === "run") { if (s.s !== "run") { s.s = "run"; s.t = Date.now(); } if (ev.chars) s.chars = ev.chars; }
           else { s.s = "done"; s.sec = Math.round((Date.now() - s.t) / 1000); }
@@ -270,6 +325,7 @@
           clearInterval(timer); busy = null;
           finish("ai", title || r.title, text, r, warn + (r.partial ? "검토 도중 문제가 생겨 마지막으로 끝난 단계까지의 결과를 저장했습니다: " + r.partial : ""), source);
         }, function (e) { clearInterval(timer); busy = null; prog.hidden = true; throw e; });
+        });
       }).catch(function (e) {
         var b = $("#sgo"); if (b) b.disabled = false;
         var st2 = $("#sstop"); if (st2) st2.hidden = true;
@@ -293,6 +349,7 @@
     cur = st.items.filter(function (x) { return x.id === id; })[0];
     if (!cur) return home();
     tab = "sum"; qFilter = "all"; draw(); window.scrollTo(0, 0);
+    if (cur.updatedNote) { cur.updatedNote = false; save(); }
   }
   function stats() { var a = cur.ans, done = Object.keys(a).length, ok = Object.keys(a).filter(function (k) { return a[k].ok; }).length; return { done: done, ok: ok, wrong: done - ok, n: (cur.result.questions || []).length }; }
   function draw() {
@@ -310,6 +367,7 @@
       "</nav>" +
       '<div class="item-main">' +
         (r.note || cur.note ? '<p class="stu-note">' + esc([r.note, cur.note].filter(Boolean).join(" ")) + "</p>" : "") +
+        (cur.updatedNote ? '<p class="stu-note">이 기본 제공 세트가 새 판으로 바뀌었습니다: 그림 내용과 의사 코드, 새 문제가 추가됐습니다. 이전 풀이 기록은 그대로 남아 있어요.</p>' : "") +
         '<div id="sbody"></div>' +
       "</div></div>";
     var body = el.querySelector("#sbody");
@@ -329,6 +387,7 @@
     body.innerHTML = '<div class="sum-grid">' +
       (s.one_line ? '<div class="panel stu-one"><small>한 줄 요약</small><p>' + esc(s.one_line) + "</p></div>" : "") +
       ((s.key_points || []).length ? '<div class="panel"><h3>핵심 정리</h3><ul class="stu-ul">' + s.key_points.map(function (p) { return "<li>" + esc(p) + "</li>"; }).join("") + "</ul></div>" : "") +
+      ((s.code || []).length ? '<div class="panel"><h3>의사 코드</h3><p class="stu-mut">시험에 빈칸으로 나올 수 있는 부분입니다. 줄 번호와 반복 범위·비교 조건·인덱스를 눈여겨보세요.</p><div class="codes">' + s.code.map(function (c) { return '<div class="codebox"><div class="code-head"><b>' + esc(c.title) + "</b>" + (c.page ? '<span class="stu-mut">' + esc(c.page) + "</span>" : "") + '</div><pre class="code">' + esc(c.code) + "</pre></div>"; }).join("") + "</div></div>" : "") +
       ((s.sections || []).length ? '<div class="panel notes"><h3>정리 노트</h3>' + s.sections.map(function (x) { return '<h4 class="stu-h4">' + esc(x.heading) + '</h4><p class="stu-p">' + esc(x.body) + "</p>"; }).join("") + "</div>" : "") +
       "</div>" +
       '<div class="row"><button class="btn primary" data-tab="quiz">문제 풀기 →</button><button class="btn" data-tab="terms">용어 카드</button><button class="btn" data-tab="ask">모르는 것 질문하기</button></div>';
@@ -358,14 +417,21 @@
     body.onclick = onQuizClick;
     el._aiRefresh = function () { var m = body.querySelector("#smore"); if (m) m.hidden = !(aiState === "on" && cur.text); };
   }
+  // 문제 본문: ``` 로 감싼 부분은 코드 블록으로, _____ 는 빈칸으로 보여 준다.
+  function fmtStem(t) {
+    return String(t || "").split("```").map(function (part, k) {
+      if (k % 2) return '<pre class="code">' + esc(part.replace(/^\n|\n$/g, "")).replace(/_{3,}/g, '<span class="blank code-blank"></span>') + "</pre>";
+      return esc(part).replace(/\n/g, "<br>").replace(/_{3,}/g, '<span class="blank"></span>');
+    }).join("");
+  }
   function qHtml(q, i) {
-    var opts = q.type === "ox" ? ["O", "X"] : (q.options || []);
+    var opts = q.type === "ox" ? ["O", "X"] : (q.options || []), isCode = /```/.test(q.question);
     return '<div class="qcard stu-q" data-q="' + i + '" id="sq' + i + '">' +
       '<div class="qhead"><span class="tag num">' + (i + 1) + '</span><span class="tag plain">' + (TYPE_NAMES[q.type] || q.type) + "</span></div>" +
-      '<div class="stem">' + esc(q.question).replace(/\n/g, "<br>").replace(/_{3,}/g, '<span class="blank"></span>') + "</div>" +
+      '<div class="stem">' + fmtStem(q.question) + "</div>" +
       (q.type === "short" || !opts.length
         ? '<textarea class="stu-text stu-ans" rows="3" placeholder="답을 적어 보세요" aria-label="' + (i + 1) + '번 답"></textarea><div class="row"><button class="btn primary" data-show>정답 확인</button></div>'
-        : '<div class="opts' + (q.type === "ox" ? " stu-ox" : "") + '">' + opts.map(function (o, k) { return '<button class="opt" data-o="' + k + '"><span class="bubble">' + (q.type === "ox" ? o : k + 1) + '</span><span class="otext">' + (q.type === "ox" ? (o === "O" ? "맞다" : "틀리다") : esc(o)) + "</span></button>"; }).join("") + "</div>") +
+        : '<div class="opts' + (q.type === "ox" ? " stu-ox" : "") + '">' + opts.map(function (o, k) { return '<button class="opt" data-o="' + k + '"><span class="bubble">' + (q.type === "ox" ? o : k + 1) + '</span><span class="otext' + (isCode ? " mono" : "") + '">' + (q.type === "ox" ? (o === "O" ? "맞다" : "틀리다") : esc(o)) + "</span></button>"; }).join("") + "</div>") +
       '<div class="stu-res"></div></div>';
   }
   function norm(s) { return String(s || "").replace(/^\s*[①②③④⑤1-5][.)]?\s*/, "").trim().toLowerCase(); }
@@ -391,7 +457,7 @@
     var canAI = aiState === "on";
     card.querySelector(".stu-res").innerHTML = '<div class="explain">' +
       (short ? "" : '<p class="' + (rec.ok ? "ok" : "ng") + '"><b>' + (rec.ok ? "정답" : "오답") + "</b></p>") +
-      "<p><b>" + (short ? "모범 답안" : "정답") + "</b> " + esc(q.answer) + "</p>" +
+      (short && /\n/.test(q.answer) ? '<p><b>모범 답안</b></p><pre class="code">' + esc(q.answer) + "</pre>" : "<p><b>" + (short ? "모범 답안" : "정답") + "</b> " + esc(q.answer) + "</p>") +
       (q.explanation ? "<p>" + esc(q.explanation) + "</p>" : "") +
       (q.evidence ? '<p class="stu-ev">근거: “' + esc(q.evidence) + "”</p>" : "") +
       (short ? gradeHtml(rec.ai) : "") +
