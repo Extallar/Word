@@ -1,7 +1,7 @@
 /* 자료 학습 노트: 자료(텍스트·파일·PDF·이미지)를 넣으면 요약·핵심 용어·문제를 만들어 풀게 한다.
    - AI 모드: 사용자가 넣은 Claude API 키로 브라우저에서 바로 요청 (키는 이 브라우저에만 저장)
    - 기본 모드(키 없음): 중요 문장 추출 요약 + 핵심어 용어 카드·빈칸 문제
-   화면: #/ 보관함·새 자료, #/item/<id> 자료 하나 */
+   화면: 주소 # 없음 = 보관함·새 자료, #item-<id> = 자료 하나 */
 (function () {
   "use strict";
   var SKEY = "study-notes-v1", KKEY = "study-notes-key";
@@ -322,7 +322,7 @@
       files = []; go(it.id);
     }
 
-    function go(id) { location.hash = id ? "#/item/" + id : "#/"; }
+    function go(id) { location.hash = id ? "#item-" + id : ""; }
     function open(id) {
       cur = st.items.filter(function (x) { return x.id === id; })[0];
       if (!cur) return list();
@@ -330,7 +330,7 @@
       window.scrollTo(0, 0);
     }
     function route() {
-      var m = location.hash.match(/^#\/item\/(.+)$/);
+      var m = location.hash.match(/^#item-(.+)$/);
       if (m) open(m[1]); else { cur = null; list(); window.scrollTo(0, 0); }
     }
     window.addEventListener("hashchange", route);
