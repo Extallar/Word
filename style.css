@@ -269,33 +269,6 @@ b.mk { color: var(--omr); font-family: var(--f-num); font-weight: 600; margin-ri
 .cfg input[type="date"] { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 10px; }
 @media (max-width: 420px) { .ddgrid { grid-template-columns: 1fr 1fr; } }
 
-/* ---------- 내 자료 학습 (study.js) ---------- */
-.stu-in { display: flex; flex-direction: column; gap: 10px; }
-.stu-in h3 { margin: 6px 0 0; }
-.stu-text { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; resize: vertical; }
-.stu-text:focus { outline: 2px solid var(--omr); outline-offset: 1px; }
-.stu-mut { color: var(--muted); font-size: .86rem; }
-.stu-lab { display: inline-flex; gap: 6px; align-items: center; }
-.stu-key summary { cursor: pointer; font-weight: 600; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.stu-key p { margin: 8px 0; }
-.stu-x { border: 0; background: none; color: var(--muted); padding: 0 2px; font-size: 1rem; line-height: 1; }
-.stu-item { cursor: pointer; }
-.stu-item:hover .stu-it { color: var(--omr); }
-.stu-it { overflow-wrap: anywhere; }
-.stu-h { overflow-wrap: anywhere; }
-.stu-note { background: var(--omr-soft); border-radius: 8px; padding: 8px 12px; font-size: .9rem; margin: 0; }
-.stu-one { border-left: 4px solid var(--omr); }
-.stu-one small { color: var(--muted); }
-.stu-one p { margin: 4px 0 0; font-size: 1.05rem; font-weight: 600; }
-.stu-ul { margin: 8px 0 0; padding-left: 20px; }
-.stu-ul li { margin: 4px 0; }
-.stu-h4 { margin: 14px 0 4px; font-size: 1rem; }
-.stu-p { margin: 0; line-height: 1.75; }
-.stu-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-.stu-card { text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 6px; min-height: 76px; }
-.stu-card:hover { border-color: var(--ink); }
-.stu-card b { font-family: var(--f-word); font-size: 1.05rem; overflow-wrap: anywhere; }
-.stu-def { color: var(--muted); font-size: .92rem; }
-.opts.stu-ox { display: grid; grid-template-columns: 1fr 1fr; }
-.stu-ev { color: var(--muted); font-size: .9rem; }
-.stu-src { white-space: normal; line-height: 1.8; overflow-wrap: anywhere; max-height: 70vh; overflow: auto; }
+/* 공부 사이트(study/)로 가는 버튼 */
+.study-link { margin-left: auto; align-self: center; font-size: .82rem; font-weight: 600; text-decoration: none; color: var(--omr); border: 1px solid var(--omr); border-radius: 999px; padding: 3px 12px; white-space: nowrap; }
+.study-link:hover { background: var(--omr-soft); }

@@ -1,10 +1,10 @@
-/* 내 자료 학습: 자료(텍스트·파일·PDF·이미지)를 넣으면 요약·핵심 용어·문제를 만들어 풀게 한다.
+/* 자료 학습 노트: 자료(텍스트·파일·PDF·이미지)를 넣으면 요약·핵심 용어·문제를 만들어 풀게 한다.
    - AI 모드: 사용자가 넣은 Claude API 키로 브라우저에서 바로 요청 (키는 이 브라우저에만 저장)
-   - 기본 모드(키 없음): 문장 추출 요약 + 단어장(5개년 기출 어휘)과 겹치는 단어로 뜻·빈칸 문제
-   app.js가 window.EXTRA_VIEWS.study(el, ctx)를 #study 탭으로 연결한다. */
+   - 기본 모드(키 없음): 중요 문장 추출 요약 + 핵심어 용어 카드·빈칸 문제
+   화면: #/ 보관함·새 자료, #/item/<id> 자료 하나 */
 (function () {
   "use strict";
-  var SKEY = "kpu-study-v1", KKEY = "kpu-study-key";
+  var SKEY = "study-notes-v1", KKEY = "study-notes-key";
   var SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.7.0/+esm";
   var MODELS = [
     ["claude-opus-5-5", "Claude Opus 5.5 (기본, 가장 정확)"],
@@ -42,59 +42,40 @@
   function isEnglish(t) { var en = (t.match(/[A-Za-z]/g) || []).length, ko = (t.match(/[가-힣]/g) || []).length; return en > ko * 2; }
 
   /* ---------- 기본 모드(키 없이) ---------- */
-  function buildLocal(text, ctx, cfg) {
-    var D = ctx.D, sents = splitSents(text), en = isEnglish(text);
-    // 단어 빈도
+  function buildLocal(text, cfg) {
+    var sents = splitSents(text), en = isEnglish(text);
     var freq = {};
     (text.toLowerCase().match(/[a-z][a-z'-]{2,}|[가-힣]{2,}/g) || []).forEach(function (w) { if (!STOP[w]) freq[w] = (freq[w] || 0) + 1; });
-    // 단어장 매칭 (표제어 + 활용형)
-    var forms = {}, TIER_RANK = { "직접 출제": 0, "반복 학술": 1, "심화": 2, "일반": 3 };
-    D.all.forEach(function (a) {
-      if (!(a.t in TIER_RANK)) return;
-      (a.f || a.w).split(", ").forEach(function (f) { f = f.toLowerCase().trim(); if (f && !forms[f]) forms[f] = a; });
-    });
-    var hits = {}, order = [];
-    Object.keys(freq).forEach(function (w) { var a = forms[w]; if (a && !hits[a.w]) { hits[a.w] = { a: a, form: w, n: 0 }; order.push(a.w); } if (a) hits[a.w].n += freq[w]; });
-    order.sort(function (x, y) { return TIER_RANK[hits[x].a.t] - TIER_RANK[hits[y].a.t] || hits[y].n - hits[x].n; });
-
-    // 추출 요약: 핵심어 점수가 높은 문장
+    var keywords = Object.keys(freq).filter(function (w) { return freq[w] >= 2 && w.length >= (en ? 4 : 2); }).sort(function (a, b) { return freq[b] - freq[a]; }).slice(0, 15);
+    // 추출 요약: 핵심어가 많이 들어간 문장
     var scored = sents.map(function (s, i) {
       var ws = (s.toLowerCase().match(/[a-z][a-z'-]{2,}|[가-힣]{2,}/g) || []), sc = 0;
-      ws.forEach(function (w) { if (!STOP[w]) sc += Math.min(freq[w] || 0, 5) + (forms[w] ? 3 : 0); });
-      return { s: s, i: i, sc: ws.length ? sc / Math.sqrt(ws.length) : 0 };
+      ws.forEach(function (w) { if (!STOP[w]) sc += Math.min(freq[w] || 0, 5); });
+      return { s: s, i: i, sc: (ws.length ? sc / Math.sqrt(ws.length) : 0) + (i === 0 ? 1 : 0) };
     });
-    var top = scored.slice().sort(function (a, b) { return b.sc - a.sc; }).slice(0, Math.min(5, Math.max(1, Math.ceil(sents.length / 5))));
+    var top = scored.slice().sort(function (a, b) { return b.sc - a.sc; }).slice(0, Math.min(6, Math.max(1, Math.ceil(sents.length / 5))));
     top.sort(function (a, b) { return a.i - b.i; });
-    var keywords = Object.keys(freq).filter(function (w) { return freq[w] >= 2 && w.length >= (en ? 4 : 2); }).sort(function (a, b) { return freq[b] - freq[a]; }).slice(0, 12);
-
-    var terms = order.slice(0, 30).map(function (w) { var h = hits[w]; return { term: h.a.w, definition: h.a.m + " · " + h.a.t, vocab: h.a.w.toLowerCase() }; });
-    var qs = [], wordPool = order.map(function (w) { return hits[w].a; });
-    var others = ctx.shuffle(D.all.filter(function (a) { return a.t in TIER_RANK; }));
-    function distract(a, key) {
-      var used = {}; used[a[key]] = 1;
-      return others.filter(function (o) { if (used[o[key]] || o.w === a.w) return false; used[o[key]] = 1; return true; }).slice(0, 3).map(function (o) { return o[key]; });
-    }
-    ctx.shuffle(wordPool).forEach(function (a) {
+    function sentWith(k) { return sents.filter(function (s) { return s.toLowerCase().indexOf(k) >= 0; }); }
+    var terms = keywords.map(function (k) { var ss = sentWith(k); return { term: k, definition: (ss[0] || "") + " (" + freq[k] + "회)" }; });
+    var qs = [];
+    shuffle(keywords).forEach(function (k) {
       if (qs.length >= cfg.n) return;
-      var h = hits[a.w];
-      var sent = sents.filter(function (s) { return new RegExp("\\b" + escRe(h.form) + "\\b", "i").test(s); })[0];
-      if (sent && Math.random() < 0.5) {
-        var opts = ctx.shuffle([h.form].concat(distract(a, "w")));
-        qs.push({ type: "blank", question: "빈칸에 들어갈 알맞은 단어는?\n" + sent.replace(new RegExp("\\b" + escRe(h.form) + "\\b", "i"), "_____"), options: opts, answer: h.form, explanation: a.w + ": " + a.m + (a.s ? " (동의어: " + a.s + ")" : ""), evidence: sent, vocab: a.w.toLowerCase() });
-      } else {
-        qs.push({ type: "mcq", question: "'" + a.w + "'의 뜻으로 알맞은 것은?", options: ctx.shuffle([a.m].concat(distract(a, "m"))), answer: a.m, explanation: a.w + " — " + a.t + " · 5개년 " + a.n + "회" + (a.s ? " · 동의어: " + a.s : ""), evidence: sent || "", vocab: a.w.toLowerCase() });
-      }
+      var ss = sentWith(k); if (!ss.length) return;
+      var sent = ss[Math.floor(Math.random() * ss.length)];
+      var opts = shuffle([k].concat(shuffle(keywords.filter(function (x) { return x !== k; })).slice(0, 3)));
+      if (opts.length < 2) return;
+      qs.push({ type: "blank", question: "빈칸에 들어갈 말은?\n" + sent.replace(new RegExp(escRe(k), "i"), "_____"), options: opts, answer: k, explanation: "자료에 " + freq[k] + "번 나온 핵심어입니다.", evidence: sent });
     });
-    // 단어장과 겹치는 단어가 부족하면 핵심어 빈칸 문제
-    if (qs.length < cfg.n) {
-      ctx.shuffle(keywords).forEach(function (k) {
-        if (qs.length >= cfg.n) return;
-        var sent = sents.filter(function (s) { return s.toLowerCase().indexOf(k) >= 0; })[0]; if (!sent) return;
-        var opts = ctx.shuffle([k].concat(ctx.shuffle(keywords.filter(function (x) { return x !== k; })).slice(0, 3)));
-        if (opts.length < 2) return;
-        qs.push({ type: "blank", question: "빈칸에 들어갈 말은?\n" + sent.replace(new RegExp(escRe(k), "i"), "_____"), options: opts, answer: k, explanation: "자료에 " + freq[k] + "번 나온 핵심어입니다.", evidence: sent });
-      });
-    }
+    // OX: 요약 문장은 O, 핵심어를 다른 핵심어로 바꾼 문장은 X
+    shuffle(top).forEach(function (t) {
+      if (qs.length >= cfg.n || keywords.length < 2) return;
+      var inS = keywords.filter(function (k) { return t.s.toLowerCase().indexOf(k) >= 0; });
+      if (Math.random() < 0.5 && inS.length) {
+        var k = inS[0], other = shuffle(keywords.filter(function (x) { return x !== k && t.s.toLowerCase().indexOf(x) < 0; }))[0];
+        if (!other) return;
+        qs.push({ type: "ox", question: t.s.replace(new RegExp(escRe(k), "i"), other), options: ["O", "X"], answer: "X", explanation: "원문에서는 '" + other + "'이(가) 아니라 '" + k + "'입니다.", evidence: t.s });
+      } else qs.push({ type: "ox", question: t.s, options: ["O", "X"], answer: "O", explanation: "원문에 그대로 나온 내용입니다.", evidence: t.s });
+    });
     return {
       title: shortTitle(sents[0] || text),
       summary: {
@@ -103,8 +84,8 @@
         sections: keywords.length ? [{ heading: "자주 나온 핵심어", body: keywords.map(function (k) { return k + " (" + freq[k] + "회)"; }).join(", ") }] : []
       },
       terms: terms,
-      questions: qs,
-      note: "기본 모드: 원문에서 중요한 문장을 골라 요약하고, 단어장(5개년 기출 어휘)과 겹치는 단어 " + order.length + "개로 문제를 만들었습니다. AI 키를 넣으면 내용 이해 문제와 해설이 만들어집니다."
+      questions: shuffle(qs),
+      note: "기본 모드: 원문에서 중요한 문장을 골라 요약하고, 자주 나온 핵심어로 빈칸·OX 문제를 만들었습니다. AI 키를 넣으면 내용 이해 문제, 해설, 정리 노트가 만들어집니다."
     };
   }
   function shortTitle(t) { t = t.replace(/\s+/g, " ").trim(); if (t.length <= 40) return t; var c = t.slice(0, 40), sp = c.lastIndexOf(" "); return (sp > 20 ? c.slice(0, sp) : c) + "…"; }
@@ -225,17 +206,22 @@
   }
 
   /* ---------- 화면 ---------- */
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function shuffle(a) { a = a.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
   function fmtDate(t) { var d = new Date(t); return (d.getMonth() + 1) + "/" + d.getDate() + " " + d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0"); }
 
-  window.EXTRA_VIEWS = window.EXTRA_VIEWS || {};
-  window.EXTRA_VIEWS.study = function (el, ctx) {
-    var esc = ctx.esc, $ = function (s) { return el.querySelector(s); };
+  var el = document.getElementById("app");
+  // 고정 헤더 높이를 CSS 변수로 (점수 막대가 헤더 밑에 붙도록)
+  function setHdr() { var h = document.querySelector("header.top"); if (h) document.documentElement.style.setProperty("--hdr", h.offsetHeight + "px"); }
+  setHdr(); window.addEventListener("resize", setHdr);
+  (function () {
+    var $ = function (s) { return el.querySelector(s); };
     var files = [], cur = null, tab = "sum", qFilter = "all";
 
     function list() {
       var key = getKey(), cfg = st.cfg;
       el.innerHTML =
-        '<div><div class="eyebrow">내 자료 학습</div><h2>자료로 요약·문제 만들기</h2></div>' +
+        '<div><div class="eyebrow">새 자료</div><h2>자료로 요약·문제 만들기</h2></div>' +
         '<p class="lead">교재·필기·기사·지문을 넣으면 요약, 핵심 용어 카드, 연습 문제를 만들어 줍니다. 푼 결과는 자료별로 저장되고, 틀린 문제만 다시 풀 수 있습니다.</p>' +
         '<div class="panel stu-in">' +
           '<h3>1. 자료 넣기</h3>' +
@@ -300,7 +286,7 @@
           else { d.dataset.sure = 1; d.textContent = "정말 삭제"; d.classList.add("bad"); }
           return;
         }
-        var o = e.target.closest("[data-open]"); if (o) open(o.dataset.open);
+        var o = e.target.closest("[data-open]"); if (o) go(o.dataset.open);
       };
       $("#sgo").onclick = function () {
         var text = ta.value.trim(), k = $("#skey").value.trim(), msg = $("#smsg"), btn = this;
@@ -312,8 +298,8 @@
         var hasBin = files.length > 0;
         if (!k) {
           if (hasBin && !text) { msg.textContent = "PDF·이미지는 AI 모드(API 키)에서만 읽을 수 있습니다. 키를 넣거나 내용을 텍스트로 붙여 넣어 주세요."; $(".stu-key").open = true; return; }
-          if (splitSents(text).length < 2 && text.length < 60) { msg.textContent = "기본 모드는 문장이 여러 개인 자료가 필요합니다."; return; }
-          var r = buildLocal(text, ctx, cfg);
+          if (splitSents(text).length < 3) { msg.textContent = "기본 모드는 문장이 세 개 이상인 자료가 필요합니다. 더 긴 자료를 넣거나 AI 키를 넣어 주세요."; return; }
+          var r = buildLocal(text, cfg);
           finish("local", title || r.title, text, r, hasBin ? "PDF·이미지는 키가 없어 제외하고 텍스트만 사용했습니다." : "");
           return;
         }
@@ -333,15 +319,21 @@
       var it = { id: String(Date.now()), title: title || "제목 없음", created: Date.now(), mode: mode, text: text.slice(0, MAX_SAVE_TEXT), result: result, ans: {}, note: note };
       st.items.unshift(it);
       if (!save()) it.note = (note ? note + " " : "") + "브라우저 저장 공간이 부족해 이 자료가 저장되지 않을 수 있습니다.";
-      files = []; open(it.id);
+      files = []; go(it.id);
     }
 
+    function go(id) { location.hash = id ? "#/item/" + id : "#/"; }
     function open(id) {
       cur = st.items.filter(function (x) { return x.id === id; })[0];
       if (!cur) return list();
       tab = "sum"; qFilter = "all"; draw();
       window.scrollTo(0, 0);
     }
+    function route() {
+      var m = location.hash.match(/^#\/item\/(.+)$/);
+      if (m) open(m[1]); else { cur = null; list(); window.scrollTo(0, 0); }
+    }
+    window.addEventListener("hashchange", route);
 
     function draw() {
       var r = cur.result, qs = r.questions || [];
@@ -367,11 +359,11 @@
       } else if (tab === "terms") {
         var ts = r.terms || [];
         body.innerHTML = ts.length ? '<p class="stu-mut">카드를 누르면 뜻이 보입니다. 모두 가리고 스스로 떠올려 보세요.</p><div class="row"><button class="btn" id="sflip">모두 뒤집기</button></div><div class="stu-cards">' + ts.map(function (t, i) {
-          return '<button class="stu-card" data-i="' + i + '" aria-expanded="false"><b>' + esc(t.term) + "</b>" + (t.vocab ? ctx.spk(t.term, true) : "") + '<span class="stu-def" hidden>' + esc(t.definition) + "</span></button>";
+          return '<button class="stu-card" data-i="' + i + '" aria-expanded="false"><b>' + esc(t.term) + "</b>" + '<span class="stu-def" hidden>' + esc(t.definition) + "</span></button>";
         }).join("") + "</div>" : '<div class="empty">이 자료에서 뽑은 용어가 없습니다.</div>';
         var all = false;
         var fb = $("#sflip"); if (fb) fb.onclick = function () { all = !all; body.querySelectorAll(".stu-card").forEach(function (c) { c.querySelector(".stu-def").hidden = !all; c.setAttribute("aria-expanded", all); }); };
-        body.onclick = function (e) { if (e.target.closest(".spk")) return; var c = e.target.closest(".stu-card"); if (c) { var d = c.querySelector(".stu-def"); d.hidden = !d.hidden; c.setAttribute("aria-expanded", !d.hidden); } };
+        body.onclick = function (e) { var c = e.target.closest(".stu-card"); if (c) { var d = c.querySelector(".stu-def"); d.hidden = !d.hidden; c.setAttribute("aria-expanded", !d.hidden); } };
       } else if (tab === "quiz") {
         var idx = qs.map(function (q, i) { return i; }).filter(function (i) { return qFilter === "all" || (qFilter === "wrong" ? a[i] && !a[i].ok : !a[i]); });
         body.innerHTML =
@@ -385,7 +377,7 @@
         body.innerHTML = cur.text ? '<div class="panel stu-src">' + esc(cur.text).replace(/\n/g, "<br>") + "</div>" + (cur.text.length >= MAX_SAVE_TEXT ? '<p class="stu-mut">원문은 앞부분 ' + MAX_SAVE_TEXT.toLocaleString() + "자만 저장됩니다.</p>" : "")
           : '<div class="empty">저장된 원문이 없습니다 (PDF·이미지로 넣었거나 저장 공간 때문에 지워졌습니다).</div>';
       }
-      $("#sback").onclick = function () { cur = null; list(); };
+      $("#sback").onclick = function () { go(""); };
       el.querySelectorAll("[data-tab]").forEach(function (b) { b.onclick = function () { tab = b.dataset.tab; draw(); }; });
     }
 
@@ -432,7 +424,6 @@
         var txt = q.type === "ox" ? (o.dataset.o === "0" ? "O" : "X") : q.options[+o.dataset.o];
         var ok = norm(txt) === norm(q.answer);
         cur.ans[i] = { ok: ok, pick: +o.dataset.o };
-        if (!ok && q.vocab) ctx.markWrong(q.vocab);
         save(); showAns(card, q, cur.ans[i]); updScore(); return;
       }
       if (e.target.closest("[data-show]")) { var ta = card.querySelector(".stu-ans"); cur.ans[i] = { ok: false, text: ta.value, self: null }; save(); showAns(card, q, cur.ans[i]); updScore(); return; }
@@ -444,6 +435,6 @@
       var s = el.querySelector(".score"); if (s) s.textContent = done + "/" + qs.length + "문제 풀이 · 정답 " + ok + (done ? " (" + Math.round(ok / done * 100) + "%)" : "");
     }
 
-    list();
-  };
+    route();
+  })();
 })();
