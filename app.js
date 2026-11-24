@@ -819,5 +819,10 @@
     $("#ryes", el).onclick = function () { state.wrong = {}; save(); route(); };
   };
 
+  /* ---------- 다른 파일의 탭 (study.js: 내 자료) ---------- */
+  var EXTRA = window.EXTRA_VIEWS || {};
+  var ctx = { D: D, esc: esc, shuffle: shuffle, spk: spk, say: say, markWrong: markWrong };
+  Object.keys(EXTRA).forEach(function (k) { views[k] = function (el) { EXTRA[k](el, ctx); }; });
+
   route();
 })();
