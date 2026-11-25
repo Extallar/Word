@@ -386,3 +386,4 @@ label.linkbtn { cursor: pointer; }
 .chk.saver span { display: flex; flex-direction: column; gap: 2px; }
 .chk.saver small { color: var(--muted); font-size: .8rem; line-height: 1.5; }
 .chk.saver input { margin-top: 4px; }
+.nocards { border: 1px dashed var(--line); border-radius: 14px; background: var(--surface); display: flex; flex-direction: column; gap: 10px; align-items: center; } .nocards p { margin: 0; }

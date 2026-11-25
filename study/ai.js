@@ -193,6 +193,23 @@
   };
 
   /* ---------- 문제 더 만들기 ---------- */
+  /* ---------- 기존 자료로 그림 카드 만들기 ---------- */
+  S.makeCards = function (item, cfg, onChars, signal) {
+    return S.ai().then(function (sample) {
+      if (!sample) throw new Error("AI 기능은 claude.ai에서 열었을 때만 쓸 수 있습니다.");
+      var r = item.result || {}, sm = r.summary || {};
+      var cardRule = RULES.split("\n").filter(function (l) { return /cards|visual|type:/.test(l); }).join("\n");
+      var prompt = "당신은 처음 배우는 학생의 기초 이해를 돕는 튜터입니다. 아래 자료로 그림 카드를 만듭니다. 자료에 없는 사실은 지어내지 마세요. 모든 설명은 한국어로 씁니다.\n" + cardRule +
+        "\n\n<정리>\n" + J({ title: item.title, one_line: sm.one_line, key_points: sm.key_points, code: sm.code }) + "\n</정리>\n\n" + material({ text: item.text || "", name: item.title }) +
+        '\n\n응답은 JSON 객체 하나만: {"cards": [{"title": "...", "subtitle": "...", "page": "...", "easy": "...", "analogy": "...", "points": ["..."], "visual": null}]}';
+      return sample.json(prompt, { modelTier: (cfg && cfg.tier) || "default", cache: false, signal: signal, onText: function (u) { onChars && onChars(u.text.length); } });
+    }).then(function (res) {
+      var cards = S.normCards ? S.normCards(res && res.cards) : [];
+      if (!cards.length) throw new Error("그림 카드를 받지 못했습니다. 다시 시도해 주세요.");
+      return cards;
+    });
+  };
+
   S.moreQuestions = function (src, cfg, existing, onChars, signal) {
     return S.ai().then(function (sample) {
       if (!sample) throw new Error("AI 기능은 claude.ai에서 열었을 때만 쓸 수 있습니다.");

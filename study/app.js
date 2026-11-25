@@ -366,7 +366,7 @@
   function draw() {
     var r = cur.result, s = stats(), log = r.log || [];
     var tabs = [["sum", "요약"]];
-    if ((r.cards || []).length) tabs.push(["cards", "그림 카드", r.cards.length]);
+    tabs.push(["cards", "그림 카드", (r.cards || []).length || null]);
     tabs = tabs.concat([["terms", "용어 카드", (r.terms || []).length], ["quiz", "문제", s.n], ["ask", "질문하기", (cur.chat || []).filter(function (m) { return m.role === "user"; }).length || null]]);
     if (log.length) tabs.push(["talk", "검토 기록", log.length]);
     tabs.push(["src", "원문"]);
@@ -387,6 +387,7 @@
     el._aiRefresh = null;
     if (tab === "sum") drawSum(body, r);
     else if (tab === "terms") drawTerms(body, r);
+    else if (tab === "cards" && !(r.cards || []).length) drawNoCards(body);
     else if (tab === "cards") { body.innerHTML = '<div class="row" style="justify-content:space-between"><p class="stu-mut" style="margin:0">앞면의 그림을 ◀ ▶로 한 단계씩 넘겨 보거나 자동 재생해 보세요. "설명 보기"를 누르면 뒷면에 쉬운 설명과 비유가 있어요.</p></div><div id="pcbox"></div>'; cur.cardImages = cur.cardImages || {}; var cit = cur;
       S.renderCards(body.querySelector("#pcbox"), r.cards, { images: cit.cardImages, onImage: function (i, url) { if (url) cit.cardImages[i] = url; else delete cit.cardImages[i]; var ok = save(true); if (!ok && url) { delete cit.cardImages[i]; save(true); } return ok; } }); }
     else if (tab === "quiz") drawQuiz(body);
@@ -406,6 +407,33 @@
       ((s.sections || []).length ? '<div class="panel notes"><h3>정리 노트</h3>' + s.sections.map(function (x) { return '<h4 class="stu-h4">' + esc(x.heading) + '</h4><p class="stu-p">' + esc(x.body) + "</p>"; }).join("") + "</div>" : "") +
       "</div>" +
       '<div class="row">' + ((r.cards || []).length ? '<button class="btn primary" data-tab="cards">그림 카드로 기초 이해하기</button>' : "") + '<button class="btn' + ((r.cards || []).length ? "" : " primary") + '" data-tab="quiz">문제 풀기 →</button><button class="btn" data-tab="terms">용어 카드</button><button class="btn" data-tab="ask">모르는 것 질문하기</button></div>';
+  }
+  // 그림 카드가 없는 예전 자료: Claude로 만들거나(사용량 듦), AI가 없으면 찾은 정의로 글 카드를 만든다.
+  var cardsBusy = null;
+  function drawNoCards(body) {
+    var it = cur, on = aiState === "on";
+    body.innerHTML = '<div class="empty nocards"><h3>이 자료에는 아직 그림 카드가 없어요</h3>' +
+      (it.text ? (on ? "<p>Claude가 원문으로 기초 이해용 그림 카드를 만들어 줍니다. (요금제 사용량이 조금 듭니다)</p>" : "<p>지금은 AI를 쓸 수 없어 원문에서 찾은 정의로 글 카드를 만듭니다. (무료)</p>") +
+        '<div class="row" style="justify-content:center"><button class="btn primary" id="mkcards">' + (on ? "Claude로 그림 카드 만들기" : "정의로 글 카드 만들기") + '</button><button class="btn" id="mkstop" hidden>중단</button></div><p class="stu-mut" id="mkmsg"></p>'
+        : "<p>저장된 원문이 없어 카드를 만들 수 없어요.</p>") + "</div>";
+    var b = body.querySelector("#mkcards"); if (!b) return;
+    b.onclick = function () {
+      var m = body.querySelector("#mkmsg");
+      if (!on) {
+        var loc = S.buildLocal(it.text, st.cfg).cards || [];
+        if (!loc.length) { m.textContent = "원문에서 정의 문장을 찾지 못했습니다. claude.ai에서 열면 Claude가 만들 수 있어요."; return; }
+        it.result.cards = loc; save(); draw(); return;
+      }
+      b.disabled = true; m.textContent = "Claude가 그림 카드를 만드는 중…";
+      var ctl = new AbortController(); cardsBusy = ctl; var stp = body.querySelector("#mkstop"); stp.hidden = false; stp.onclick = function () { ctl.abort(); };
+      S.makeCards(it, st.cfg, function (n) { m.textContent = "Claude가 그림 카드를 쓰는 중… " + n.toLocaleString() + "자"; }, ctl.signal).then(function (cards) {
+        cardsBusy = null; it.result.cards = cards; save(); if (cur === it && tab === "cards") draw();
+      }, function (e) {
+        cardsBusy = null; if (!b.isConnected) return; b.disabled = false; stp.hidden = true;
+        m.textContent = e && e.code === "cancelled" ? "중단했습니다." : e && e.code ? S.errText(e) : (e && e.message) || "카드를 만들지 못했습니다.";
+      });
+    };
+    el._aiRefresh = function () { if (!cardsBusy && tab === "cards" && cur === it && !(it.result.cards || []).length) drawNoCards(body); };
   }
   function drawTerms(body, r) {
     var ts = r.terms || [];
