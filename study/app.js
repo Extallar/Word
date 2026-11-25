@@ -21,9 +21,13 @@
   } catch (e) {}
   if (st.cfg.rounds == null || st.cfg.rounds > 2) st.cfg.rounds = 1;
   if (!/^(quick|default|complex)$/.test(st.cfg.tier)) st.cfg.tier = "default";
-  function save() {
+  // 사용량 아끼기 모드: 처음 한 번 기본으로 켠다(빠르게 · 검토 없음 · PDF 그림 쪽 전송 끔).
+  var SAVER = { tier: "quick", rounds: 0 }, NORMAL = { tier: "default", rounds: 1 };
+  if (!st.cfg.saverSet) { st.cfg.saverSet = 1; st.cfg.saver = true; st.cfg.tier = SAVER.tier; st.cfg.rounds = SAVER.rounds; }
+  function save(strict) {
     try { localStorage.setItem(SKEY, JSON.stringify(st)); return true; }
     catch (e) {
+      if (strict) return false; // 그림 붙이기처럼 실패해도 되는 저장은 원문을 지우지 않는다
       for (var i = st.items.length - 1; i >= 0; i--) { if (st.items[i].text && !st.items[i].preset) { st.items[i].text = ""; try { localStorage.setItem(SKEY, JSON.stringify(st)); return true; } catch (e2) {} } }
       return false;
     }
@@ -133,7 +137,7 @@
       var r = new FileReader();
       r.onerror = function () { rej(new Error(f.name + "을(를) 읽지 못했습니다.")); };
       if (/\.pdf$/i.test(f.name) || f.type === "application/pdf") {
-        r.onload = function () { openPdf(new Uint8Array(r.result)).then(function (doc) { res({ kind: "pdf", name: f.name, doc: doc, pages: doc.numPages, from: 1, to: doc.numPages, figs: true }); }, function (e) { rej(new Error(f.name + ": PDF를 열지 못했습니다. " + (e.message || ""))); }); };
+        r.onload = function () { openPdf(new Uint8Array(r.result)).then(function (doc) { res({ kind: "pdf", name: f.name, doc: doc, pages: doc.numPages, from: 1, to: doc.numPages, figs: !st.cfg.saver }); }, function (e) { rej(new Error(f.name + ": PDF를 열지 못했습니다. " + (e.message || ""))); }); };
         r.readAsArrayBuffer(f);
       } else if (/^image\/(png|jpeg|gif|webp)$/.test(f.type)) res({ kind: "image", name: f.name, type: f.type, blob: f });
       else if (/\.(txt|md|csv|tsv|html?|json|srt|vtt)$/i.test(f.name) || /^text\//.test(f.type)) {
@@ -172,6 +176,7 @@
         '<div class="panel team">' +
           '<div class="row" style="justify-content:space-between"><h3>AI · Claude</h3><span id="tstate"></span></div>' +
           '<p class="stu-mut small" id="tinfo"></p>' +
+          '<label class="chk saver"><input type="checkbox" id="ssaver"' + (cfg.saver ? " checked" : "") + '> <span><b>사용량 아끼기 모드</b><small>생각 수준 "빠르게", 검토 없음, PDF 그림 쪽 전송 끔. 요금제 사용량을 가장 적게 씁니다.</small></span></label>' +
           '<label class="fld"><span>생각 수준</span><select id="stier">' + S.TIERS.map(function (t) { return '<option value="' + t[0] + '"' + (cfg.tier === t[0] ? " selected" : "") + ">" + t[1] + "</option>"; }).join("") + "</select></label>" +
           '<label class="fld"><span>검토</span><select id="srounds"><option value="0"' + (+cfg.rounds === 0 ? " selected" : "") + '>검토 없이 빠르게</option><option value="1"' + (+cfg.rounds === 1 ? " selected" : "") + '>1번 (초안 → 검토 → 수정)</option><option value="2"' + (+cfg.rounds === 2 ? " selected" : "") + ">2번 (한 번 더 검토·수정)</option></select></label>" +
         "</div>" +
@@ -249,8 +254,14 @@
     };
     $("#sn").onchange = function () { cfg.n = +this.value; save(); };
     $("#slv").onchange = function () { cfg.level = this.value; save(); };
-    $("#stier").onchange = function () { cfg.tier = this.value; save(); };
-    $("#srounds").onchange = function () { cfg.rounds = +this.value; save(); teamState(); };
+    function syncSaver() { cfg.saver = cfg.tier === SAVER.tier && +cfg.rounds === SAVER.rounds; var c = $("#ssaver"); if (c) c.checked = cfg.saver; }
+    $("#stier").onchange = function () { cfg.tier = this.value; syncSaver(); save(); };
+    $("#ssaver").onchange = function () {
+      var m = this.checked ? SAVER : NORMAL; cfg.saver = this.checked; cfg.tier = m.tier; cfg.rounds = m.rounds;
+      files.forEach(function (f) { if (f.kind === "pdf") f.figs = !cfg.saver; });
+      save(); $("#stier").value = cfg.tier; $("#srounds").value = String(cfg.rounds); teamState();
+    };
+    $("#srounds").onchange = function () { cfg.rounds = +this.value; syncSaver(); save(); teamState(); };
     $("#slib").onclick = function (e) {
       var d = e.target.closest("[data-del]");
       if (d) {
@@ -376,7 +387,8 @@
     el._aiRefresh = null;
     if (tab === "sum") drawSum(body, r);
     else if (tab === "terms") drawTerms(body, r);
-    else if (tab === "cards") { body.innerHTML = '<div class="row" style="justify-content:space-between"><p class="stu-mut" style="margin:0">앞면의 그림을 ◀ ▶로 한 단계씩 넘겨 보거나 자동 재생해 보세요. "설명 보기"를 누르면 뒷면에 쉬운 설명과 비유가 있어요.</p></div><div id="pcbox"></div>'; S.renderCards(body.querySelector("#pcbox"), r.cards); }
+    else if (tab === "cards") { body.innerHTML = '<div class="row" style="justify-content:space-between"><p class="stu-mut" style="margin:0">앞면의 그림을 ◀ ▶로 한 단계씩 넘겨 보거나 자동 재생해 보세요. "설명 보기"를 누르면 뒷면에 쉬운 설명과 비유가 있어요.</p></div><div id="pcbox"></div>'; cur.cardImages = cur.cardImages || {}; var cit = cur;
+      S.renderCards(body.querySelector("#pcbox"), r.cards, { images: cit.cardImages, onImage: function (i, url) { if (url) cit.cardImages[i] = url; else delete cit.cardImages[i]; var ok = save(true); if (!ok && url) { delete cit.cardImages[i]; save(true); } return ok; } }); }
     else if (tab === "quiz") drawQuiz(body);
     else if (tab === "ask") drawAsk(body);
     else if (tab === "talk") drawTalk(body, r);
@@ -582,7 +594,7 @@
       bub.className = "bub bub-assistant thinking"; bub.textContent = "생각하는 중…"; chat.appendChild(bub); chat.scrollTop = chat.scrollHeight;
       var ctl = new AbortController(); chatBusy = ctl;
       body.querySelector("#asksend").disabled = true; body.querySelector("#askstop").hidden = false;
-      S.chat(it, it.chat, function (t) { bub.classList.remove("thinking"); bub.textContent = t; chat.scrollTop = chat.scrollHeight; }, ctl.signal).then(function (res) {
+      S.chat(it, it.chat.slice(), function (t) { bub.classList.remove("thinking"); bub.textContent = t; chat.scrollTop = chat.scrollHeight; }, ctl.signal, st.cfg.tier).then(function (res) {
         chatBusy = null; it.chat.push({ role: "assistant", content: res.text + (res.truncated ? "\n\n(답이 길어 중간에 끊겼습니다.)" : "") }); save();
         if (cur === it && tab === "ask") render();
       }, function (e) {

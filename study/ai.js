@@ -221,7 +221,7 @@
   };
 
   /* ---------- 질문하기 (자료 기반 채팅) ---------- */
-  S.chat = function (item, turns, onText, signal) {
+  S.chat = function (item, turns, onText, signal, tier) {
     return S.ai().then(function (sample) {
       if (!sample) throw new Error("AI 기능은 claude.ai에서 열었을 때만 쓸 수 있습니다.");
       var r = item.result || {}, s = r.summary || {};
@@ -231,7 +231,7 @@
         "- 짧고 분명하게, 필요하면 예시나 단계별 풀이를 보여 줍니다. 학생이 문제를 내 달라고 하면 하나씩 내고 답을 기다립니다.\n\n" +
         "<정리>\n" + J({ title: item.title, one_line: s.one_line, key_points: s.key_points, terms: (r.terms || []).slice(0, 40) }) + "\n</정리>\n\n" +
         "<자료>\n" + (item.text || "(원문 없음)").slice(0, 100000) + "\n</자료>";
-      return sample([{ role: "user", content: ctx }].concat(turns.slice(-16)), { cache: false, signal: signal, onText: function (u) { onText(u.text); } });
+      return sample([{ role: "user", content: ctx }].concat(turns.slice(-16)), { modelTier: tier || "default", cache: false, signal: signal, onText: function (u) { onText(u.text); } });
     });
   };
 })();

@@ -373,3 +373,16 @@ pre.code { margin: 0; padding: 12px 14px; font-family: var(--f-num); font-size: 
 .cv-arr.dense { gap: 3px; }
 .cv-arr.dense .cv-cell b { min-width: 25px; height: 30px; padding: 0 2px; font-size: .8rem; border-radius: 6px; }
 .cv-arr.dense .cv-cell small { font-size: .62rem; }
+/* 내 그림 · 사용량 아끼기 */
+.pc-mine { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.pc-mine img { width: 100%; max-height: 320px; object-fit: contain; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); }
+.pc-mine figcaption { font-size: .78rem; color: var(--muted); text-align: right; }
+.pc-tools { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+label.linkbtn { cursor: pointer; }
+.pc-msg { margin: 0; }
+.pc-msg textarea { margin-top: 6px; font-size: .85rem; }
+.pcard.drop { border-color: var(--omr); }
+.chk.saver { align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: var(--good-soft); }
+.chk.saver span { display: flex; flex-direction: column; gap: 2px; }
+.chk.saver small { color: var(--muted); font-size: .8rem; line-height: 1.5; }
+.chk.saver input { margin-top: 4px; }
