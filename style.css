@@ -268,3 +268,7 @@ b.mk { color: var(--omr); font-family: var(--f-num); font-weight: 600; margin-ri
 .tag.good { background: var(--good-soft); color: var(--good); }
 .cfg input[type="date"] { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 10px; }
 @media (max-width: 420px) { .ddgrid { grid-template-columns: 1fr 1fr; } }
+
+/* 공부 사이트(study/)로 가는 버튼 */
+.study-link { margin-left: auto; align-self: center; font-size: .82rem; font-weight: 600; text-decoration: none; color: var(--omr); border: 1px solid var(--omr); border-radius: 999px; padding: 3px 12px; white-space: nowrap; }
+.study-link:hover { background: var(--omr-soft); }
