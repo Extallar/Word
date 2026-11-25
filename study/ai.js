@@ -74,6 +74,7 @@
       summary: { one_line: str(s.one_line), key_points: arr(s.key_points).map(str).filter(Boolean), sections: arr(s.sections).map(function (x) { return { heading: str(x && x.heading), body: str(x && x.body) }; }).filter(function (x) { return x.body; }),
         code: arr(s.code).map(function (x) { return { title: str(x && x.title), page: str(x && x.page), code: x && x.code != null ? String(x.code).replace(/\s+$/, "") : "" }; }).filter(function (x) { return x.code; }) },
       terms: arr(r.terms).map(function (x) { return { term: str(x && x.term), definition: str(x && x.definition) }; }).filter(function (x) { return x.term && x.definition; }),
+      cards: S.normCards ? S.normCards(r.cards) : [],
       questions: arr(r.questions).map(normQ).filter(Boolean)
     };
     if (!out.questions.length && !out.summary.one_line) { var e = new Error("Claude의 답에서 요약과 문제를 찾지 못했습니다. 다시 시도해 주세요."); throw e; }
@@ -94,11 +95,20 @@
     "- 오답 선지는 그럴듯하지만 자료를 읽으면 틀렸음을 알 수 있게 만드세요. 정답 위치를 골고루 섞으세요.\n" +
     "- 자료에 의사 코드·소스 코드가 있으면 summary.code에 {title, page, code}로 줄 번호까지 원문 그대로 옮기고, 반복 범위·비교 조건·배열 인덱스·대입 같은 핵심 부분을 빈칸(_____)으로 묻는 blank 문제를 꼭 포함하세요. 코드는 question 안에서 ``` 로 감쌉니다(예: \"다음은 ○○ 의사 코드다. 빈칸에 들어갈 것은?\\n```\\n1. for i = 1 to _____\\n```\").\n" +
     "- 그림·표·그래프 이미지를 함께 받았다면 그 내용(수행 과정 단계, 표의 값, 그래프의 순서)도 정리 노트와 문제에 반영하세요.\n" +
+    "- cards에는 처음 배우는 학생의 기초 이해를 돕는 그림 카드 4~10장을 만듭니다. 각 카드: title, subtitle(한 줄 요약), page, easy(초보자용 쉬운 설명 2~3문장), analogy(일상 비유 1문장), points(꼭 기억할 것 2~4개), visual.\n" +
+    "  visual은 아래 중 하나(알맞은 그림이 없으면 null): " +
+    "{type:\"array\", steps:[{a:[값 배열], hl:[강조 인덱스], done:[확정된 인덱스], note:\"이 단계 설명\"}]} 배열이 바뀌는 과정(정렬 등) — 단계는 직접 계산해 정확하게, 3~14단계; " +
+    "{type:\"heap\", steps:[{a:[루트부터 힙 배열], size:힙 크기, hl:[인덱스], note}]}; " +
+    "{type:\"list\", steps:[{items:[문자열], note}]}; " +
+    "{type:\"rows\", steps:[{rows:[{label, items:[문자열], hl:[인덱스]}], note}]} 여러 줄·집합·저장 장치의 변화; " +
+    "{type:\"flow\", boxes:[차례대로 일어나는 단계 문자열]}; " +
+    "{type:\"tree\", labels:[완전 이진 트리 순서(루트, 왼쪽, 오른쪽, …)의 라벨, 빈 자리는 null], note}.\n" +
     "- explanation은 정답인 이유와 헷갈리기 쉬운 오답이 틀린 이유를 씁니다. evidence는 근거가 되는 원문 구절을 그대로 인용하고, 자료에 [p.12] 같은 쪽 표시가 있으면 끝에 쪽 번호를 붙입니다.";
   var SHAPE =
     '응답은 다음 모양의 JSON 객체 하나만 보내세요:\n' +
     '{"title": "자료 제목", "summary": {"one_line": "...", "key_points": ["..."], "sections": [{"heading": "...", "body": "..."}], "code": [{"title": "알고리즘 이름", "page": "p.9", "code": "1. for ..."}]}, ' +
     '"terms": [{"term": "...", "definition": "..."}], ' +
+    '"cards": [{"title": "...", "subtitle": "...", "page": "...", "easy": "...", "analogy": "...", "points": ["..."], "visual": {"type": "array", "steps": [{"a": [3, 1, 2], "hl": [0, 1], "done": [], "note": "..."}]}}], ' +
     '"questions": [{"type": "mcq", "question": "...", "options": ["...","...","...","..."], "answer": "...", "explanation": "...", "evidence": "..."}]}';
   function request(cfg) {
     var types = Object.keys(S.TYPE_NAMES).filter(function (t) { return cfg.types[t]; });

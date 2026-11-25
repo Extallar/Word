@@ -354,7 +354,9 @@
   function stats() { var a = cur.ans, done = Object.keys(a).length, ok = Object.keys(a).filter(function (k) { return a[k].ok; }).length; return { done: done, ok: ok, wrong: done - ok, n: (cur.result.questions || []).length }; }
   function draw() {
     var r = cur.result, s = stats(), log = r.log || [];
-    var tabs = [["sum", "요약"], ["terms", "용어 카드", (r.terms || []).length], ["quiz", "문제", s.n], ["ask", "질문하기", (cur.chat || []).filter(function (m) { return m.role === "user"; }).length || null]];
+    var tabs = [["sum", "요약"]];
+    if ((r.cards || []).length) tabs.push(["cards", "그림 카드", r.cards.length]);
+    tabs = tabs.concat([["terms", "용어 카드", (r.terms || []).length], ["quiz", "문제", s.n], ["ask", "질문하기", (cur.chat || []).filter(function (m) { return m.role === "user"; }).length || null]]);
     if (log.length) tabs.push(["talk", "검토 기록", log.length]);
     tabs.push(["src", "원문"]);
     el.innerHTML =
@@ -374,6 +376,7 @@
     el._aiRefresh = null;
     if (tab === "sum") drawSum(body, r);
     else if (tab === "terms") drawTerms(body, r);
+    else if (tab === "cards") { body.innerHTML = '<div class="row" style="justify-content:space-between"><p class="stu-mut" style="margin:0">앞면의 그림을 ◀ ▶로 한 단계씩 넘겨 보거나 자동 재생해 보세요. "설명 보기"를 누르면 뒷면에 쉬운 설명과 비유가 있어요.</p></div><div id="pcbox"></div>'; S.renderCards(body.querySelector("#pcbox"), r.cards); }
     else if (tab === "quiz") drawQuiz(body);
     else if (tab === "ask") drawAsk(body);
     else if (tab === "talk") drawTalk(body, r);
@@ -390,7 +393,7 @@
       ((s.code || []).length ? '<div class="panel"><h3>의사 코드</h3><p class="stu-mut">시험에 빈칸으로 나올 수 있는 부분입니다. 줄 번호와 반복 범위·비교 조건·인덱스를 눈여겨보세요.</p><div class="codes">' + s.code.map(function (c) { return '<div class="codebox"><div class="code-head"><b>' + esc(c.title) + "</b>" + (c.page ? '<span class="stu-mut">' + esc(c.page) + "</span>" : "") + '</div><pre class="code">' + esc(c.code) + "</pre></div>"; }).join("") + "</div></div>" : "") +
       ((s.sections || []).length ? '<div class="panel notes"><h3>정리 노트</h3>' + s.sections.map(function (x) { return '<h4 class="stu-h4">' + esc(x.heading) + '</h4><p class="stu-p">' + esc(x.body) + "</p>"; }).join("") + "</div>" : "") +
       "</div>" +
-      '<div class="row"><button class="btn primary" data-tab="quiz">문제 풀기 →</button><button class="btn" data-tab="terms">용어 카드</button><button class="btn" data-tab="ask">모르는 것 질문하기</button></div>';
+      '<div class="row">' + ((r.cards || []).length ? '<button class="btn primary" data-tab="cards">그림 카드로 기초 이해하기</button>' : "") + '<button class="btn' + ((r.cards || []).length ? "" : " primary") + '" data-tab="quiz">문제 풀기 →</button><button class="btn" data-tab="terms">용어 카드</button><button class="btn" data-tab="ask">모르는 것 질문하기</button></div>';
   }
   function drawTerms(body, r) {
     var ts = r.terms || [];

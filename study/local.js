@@ -432,6 +432,8 @@
         code: codes.map(function (b) { return { title: b.title, page: b.page || "", code: b.code }; })
       },
       terms: terms,
+      // 기본 모드의 그림 카드: 찾은 정의로 만든 글 카드(그림 없음)
+      cards: defs.length >= 2 ? defs.slice(0, 10).map(function (d) { return { title: d.term, subtitle: shortTitle(d.def), page: "", visual: null, easy: d.def, analogy: "", points: d.src && d.src !== d.def ? [d.src] : [] }; }) : [],
       questions: shuffle(qs),
       note: "기본 모드(무료): AI 없이 규칙으로 만들었습니다. 정의 문장 " + defs.length + "개, 핵심어 " + kws.length + "개" + (codes.length ? ", 의사 코드 " + codes.length + "개" : "") + "를 찾아 문제 " + qs.length + "개(" +
         Object.keys(counts).map(function (t) { return (S.TYPE_NAMES || {})[t] + " " + counts[t]; }).join(", ") + ")를 만들었습니다." +
