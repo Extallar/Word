@@ -1,7 +1,9 @@
 /* 그림 카드: 앞면은 그림(단계별로 넘겨 보기·자동 재생), 뒷면은 쉬운 설명·비유·핵심.
    카드 모양: {title, subtitle, page, visual, easy, analogy, points}
    visual.type: array(칸 배열 단계) · heap(힙 트리 단계) · tree(라벨 트리) · list(문자열 목록 단계)
-                rows(이름 붙은 줄 단계) · flow(흐름 상자) · venn(np | nph) */
+                rows(이름 붙은 줄 단계) · flow(흐름 상자) · venn(np | nph)
+                graph(자원할당 그래프 단계: nodes 고정, steps마다 edges) · mem(메모리 막대 단계: cols[{title, blocks}])
+                table(표 단계: head, rows, hl, done, cap) */
 (function () {
   "use strict";
   var S = window.Study = window.Study || {};
@@ -72,11 +74,60 @@
       '<ellipse class="v-np" cx="210" cy="115" rx="190" ry="95"/><circle class="v-p" cx="130" cy="118" r="62"/><circle class="v-npc" cx="295" cy="118" r="62"/>' +
       '<text x="205" y="16" text-anchor="middle">NP</text><text x="130" y="124" text-anchor="middle">P</text><text x="295" y="124" text-anchor="middle" class="strong">NP-완전</text></svg>';
   }
+  var gid = 0;
+  function graphView(v, step) {
+    // nodes: [{id, label, kind:"p"|"r", x, y}] (x,y는 0~100), edges: [{from, to, kind:"hold"|"wait", hl, cut}]
+    var W = 460, H = 270, nodes = {}, k = "g" + (++gid);
+    arr(v.nodes).forEach(function (n) { nodes[n.id] = { x: 30 + n.x / 100 * (W - 60), y: 28 + n.y / 100 * (H - 56), n: n }; });
+    function edge(e) {
+      var a = nodes[e.from], b = nodes[e.to]; if (!a || !b) return "";
+      var dx = b.x - a.x, dy = b.y - a.y, L = Math.sqrt(dx * dx + dy * dy) || 1, ux = dx / L, uy = dy / L;
+      function off(nd, sgn) { // 원은 반지름, 상자는 테두리까지
+        if (nd.n.kind === "r") { var t = Math.min(30 / Math.max(Math.abs(ux), .01), 17 / Math.max(Math.abs(uy), .01)); return t + 4; }
+        return 24;
+      }
+      var x1 = a.x + ux * off(a), y1 = a.y + uy * off(a), x2 = b.x - ux * off(b), y2 = b.y - uy * off(b);
+      var cls = "cv-gedge " + (e.kind === "wait" ? "wait" : "hold") + (e.hl ? " hl" : "") + (e.cut ? " cut" : "");
+      var mk = e.hl ? "h" : e.kind === "wait" ? "w" : "a";
+      var out = '<line class="' + cls + '" x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" marker-end="url(#' + k + mk + ')"/>';
+      if (e.cut) out += '<text class="cv-gcut" x="' + ((x1 + x2) / 2) + '" y="' + ((y1 + y2) / 2 + 6) + '" text-anchor="middle">✕</text>';
+      return out;
+    }
+    function marker(id, cls) { return '<marker id="' + k + id + '" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="cv-ah ' + cls + '" d="M0,0 L10,5 L0,10 z"/></marker>'; }
+    var hn = arr(step.hl);
+    var body = arr(step.edges).map(edge).join("") + arr(v.nodes).map(function (n) {
+      var p = nodes[n.id], c = "cv-gnode " + (n.kind === "r" ? "r" : "p") + (has(hn, n.id) ? " hl" : "") + (has(step.dim, n.id) ? " dim" : "");
+      var shape = n.kind === "r" ? '<rect x="' + (p.x - 30) + '" y="' + (p.y - 17) + '" width="60" height="34" rx="4"/>' : '<circle cx="' + p.x + '" cy="' + p.y + '" r="22"/>';
+      return '<g class="' + c + '">' + shape + '<text x="' + p.x + '" y="' + (p.y + 5) + '" text-anchor="middle">' + esc(n.label || n.id) + "</text></g>";
+    }).join("");
+    return '<svg class="cv-graph" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="자원할당 그래프"><defs>' + marker("a", "hold") + marker("w", "wait") + marker("h", "hl") + "</defs>" + body + "</svg>" +
+      '<div class="cv-legend"><span><i class="lg hold"></i>할당 (자원 → 프로세스)</span><span><i class="lg wait"></i>대기 (프로세스 → 자원)</span>' + (arr(step.edges).some(function (e) { return e.hl; }) ? '<span><i class="lg cyc"></i>순환</span>' : "") + "</div>";
+  }
+  function memView(step) {
+    // cols: [{title, blocks:[{label, size, kind:"kernel"|"proc"|"free"|"frag"|"hl"|"common"|"disk", tag, at}]}]
+    var cols = arr(step.cols);
+    return '<div class="cv-mem">' + cols.map(function (c) {
+      var bl = arr(c.blocks), tot = bl.reduce(function (t, b) { return t + (+b.size || 1); }, 0) || 1, H = c.h || 230;
+      return '<div class="cv-mcol">' + (c.title ? '<div class="cv-mtitle">' + esc(c.title) + "</div>" : "") + '<div class="cv-mstack' + (c.disk ? " disk" : "") + '">' + bl.map(function (b) {
+        var h = Math.max(24, (+b.size || 1) / tot * H);
+        return '<div class="cv-mblk ' + esc(b.kind || "proc") + '" style="flex:0 0 ' + h.toFixed(1) + 'px">' + (b.at != null ? '<span class="cv-mat">' + esc(b.at) + "</span>" : "") + "<b>" + esc(b.label) + "</b>" + (b.tag ? "<small>" + esc(b.tag) + "</small>" : "") + "</div>";
+      }).join("") + "</div>" + (c.foot ? '<div class="cv-mfoot">' + esc(c.foot) + "</div>" : "") + "</div>";
+    }).join("") + "</div>";
+  }
+  function tableView(step) {
+    return (step.cap ? '<div class="cv-tcap">' + esc(step.cap) + "</div>" : "") + '<table class="cv-table"><thead><tr>' + arr(step.head).map(function (h) { return "<th>" + esc(h) + "</th>"; }).join("") + "</tr></thead><tbody>" +
+      arr(step.rows).map(function (r, i) {
+        return '<tr class="' + (has(step.hl, i) ? "hl" : "") + (has(step.done, i) ? " done" : "") + (has(step.bad, i) ? " bad" : "") + '">' + arr(r).map(function (x) { return "<td>" + esc(x) + "</td>"; }).join("") + "</tr>";
+      }).join("") + "</tbody></table>";
+  }
   function stepView(v, step) {
     if (v.type === "array") return cells(step);
     if (v.type === "heap") return heapView(step);
     if (v.type === "list") return listView(step);
     if (v.type === "rows") return rowsView(step);
+    if (v.type === "graph") return graphView(v, step);
+    if (v.type === "mem") return memView(step);
+    if (v.type === "table") return tableView(step);
     return "";
   }
   function staticView(v) {
@@ -85,7 +136,7 @@
     if (v.type === "tree") return treeSvg(arr(v.labels).map(function (l) { return l == null ? null : { label: l }; }), { leafRect: true, branchLabels: true, aria: "결정 트리" });
     return "";
   }
-  S.cardSteps = function (v) { return v && /^(array|heap|list|rows)$/.test(v.type) ? arr(v.steps).filter(Boolean) : []; };
+  S.cardSteps = function (v) { return v && /^(array|heap|list|rows|graph|mem|table)$/.test(v.type) ? arr(v.steps).filter(Boolean) : []; };
 
   /* ---------- 카드 ---------- */
   function front(c, k) {
@@ -190,14 +241,17 @@
       var v = c.visual && typeof c.visual === "object" ? c.visual : null, ok = null;
       if (v) {
         var t = String(v.type || "");
-        if (/^(array|heap|list|rows)$/.test(t)) {
+        if (/^(array|heap|list|rows|graph|mem|table)$/.test(t)) {
           var steps = arr(v.steps).filter(function (s) {
             if (!s || typeof s !== "object") return false;
             if (t === "array" || t === "heap") return arr(s.a).length > 0 && arr(s.a).length <= 20;
             if (t === "list") return arr(s.items).length > 0 && arr(s.items).length <= 20;
+            if (t === "graph") return arr(s.edges).length <= 30;
+            if (t === "mem") return arr(s.cols).length > 0 && arr(s.cols).length <= 4;
             return arr(s.rows).length > 0;
           }).slice(0, 30);
-          if (steps.length) ok = { type: t, steps: steps };
+          if (t === "graph" && !(arr(v.nodes).length >= 2 && arr(v.nodes).length <= 12)) steps = [];
+          if (steps.length) ok = t === "graph" ? { type: t, nodes: arr(v.nodes).map(function (n) { return { id: String(n.id), label: String(n.label || n.id), kind: n.kind === "r" ? "r" : "p", x: Math.max(0, Math.min(100, +n.x || 0)), y: Math.max(0, Math.min(100, +n.y || 0)) }; }), steps: steps } : { type: t, steps: steps };
         } else if (t === "flow" && arr(v.boxes).length >= 2) ok = { type: t, boxes: arr(v.boxes).slice(0, 8).map(String) };
         else if (t === "venn" && /^(np|nph)$/.test(v.variant)) ok = { type: t, variant: v.variant };
         else if (t === "tree" && arr(v.labels).length && arr(v.labels).length <= 31) ok = { type: t, labels: v.labels, note: v.note };
