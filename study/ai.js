@@ -89,6 +89,7 @@
     "- 설명과 해설은 한국어로 씁니다. 자료가 영어면 용어·인용·문제 본문에 영어 원문을 그대로 써도 됩니다.\n" +
     "- summary.one_line은 한 문장, key_points는 4~8개 핵심 문장, sections는 자료 흐름대로 나눈 정리 노트(각 body는 2~6문장)입니다.\n" +
     "- terms는 시험에 나올 만한 개념·용어와 자료에 근거한 짧은 정의입니다.\n" +
+    "- 자료에 영문 표기가 있는 용어(예: 버블 정렬(Bubble Sort), 잠금(lock))는 terms의 term과 요약·정리 노트에서 처음 나올 때 \"한글(영문)\"처럼 영문을 함께 적으세요. 자료에 없는 영문을 지어내지는 마세요.\n" +
     "- 문제 type: mcq(4지선다, options 4개, answer는 options 중 하나와 글자까지 똑같이), ox(options는 [\"O\",\"X\"], answer는 \"O\" 또는 \"X\"), " +
     "blank(문장에 _____ 빈칸, options 4개, answer는 options 중 하나), short(단답·서술, options는 빈 배열, answer는 모범 답안).\n" +
     "- 개념 확인뿐 아니라 직접 계산·추적해 보는 문제(예: 알고리즘 수행 과정, 공식 적용)도 자료에 있으면 섞으세요.\n" +
@@ -102,7 +103,10 @@
     "{type:\"list\", steps:[{items:[문자열], note}]}; " +
     "{type:\"rows\", steps:[{rows:[{label, items:[문자열], hl:[인덱스]}], note}]} 여러 줄·집합·저장 장치의 변화; " +
     "{type:\"flow\", boxes:[차례대로 일어나는 단계 문자열]}; " +
-    "{type:\"tree\", labels:[완전 이진 트리 순서(루트, 왼쪽, 오른쪽, …)의 라벨, 빈 자리는 null], note}.\n" +
+    "{type:\"tree\", labels:[완전 이진 트리 순서(루트, 왼쪽, 오른쪽, …)의 라벨, 빈 자리는 null], note}; " +
+    "{type:\"graph\", nodes:[{id, label, kind:\"p\"(프로세스·원) 또는 \"r\"(자원·사각형), x:0~100, y:0~100}], steps:[{edges:[{from, to, kind:\"hold\"(자원→프로세스 할당) 또는 \"wait\"(프로세스→자원 대기), hl:true(순환 강조)}], hl:[강조 노드 id], note}]} 자원할당 그래프·관계 그래프(노드 2~12개); " +
+    "{type:\"mem\", steps:[{cols:[{title, blocks:[{label, size:상대 크기 숫자, kind:\"kernel\"|\"proc\"|\"free\"|\"frag\"|\"hl\"|\"common\"|\"disk\", tag:\"20KB\" 등, at:시작 주소}]}], note}]} 메모리 배치·분할·단편화·스왑을 세로 막대로(열 1~3개를 나란히 비교); " +
+    "{type:\"table\", steps:[{cap:\"표 위 한 줄\", head:[열 이름], rows:[[칸 값]], hl:[강조 행], done:[끝난 행], bad:[문제 행], note}]} 값이 바뀌는 표(예: 은행원 알고리즘).\n" +
     "- explanation은 정답인 이유와 헷갈리기 쉬운 오답이 틀린 이유를 씁니다. evidence는 근거가 되는 원문 구절을 그대로 인용하고, 자료에 [p.12] 같은 쪽 표시가 있으면 끝에 쪽 번호를 붙입니다.";
   var SHAPE =
     '응답은 다음 모양의 JSON 객체 하나만 보내세요:\n' +
