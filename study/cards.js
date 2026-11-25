@@ -166,7 +166,7 @@
         try { navigator.clipboard.writeText(t).then(done, fallback); } catch (er) { fallback(); }
         return;
       }
-      if (e.target.closest("[data-flip]")) { stop(i); s.flip = !s.flip; draw(i); card.classList.add("turn"); setTimeout(function () { card.classList.remove("turn"); }, 350); if (onFlip) onFlip(i, s.flip); return; }
+      if (e.target.closest("[data-flip]")) { stop(i); s.flip = !s.flip; draw(i); card.classList.add("turn"); setTimeout(function () { card.classList.remove("turn"); }, 350); if (opts.onFlip) opts.onFlip(i, s.flip); return; }
       if (e.target.closest("[data-prev]")) { stop(i); s.k = Math.max(0, s.k - 1); draw(i); return; }
       if (e.target.closest("[data-next]")) { stop(i); s.k = Math.min(n - 1, s.k + 1); draw(i); return; }
       if (e.target.closest("[data-play]")) {
